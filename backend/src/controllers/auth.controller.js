@@ -17,23 +17,9 @@ const generateSixDigitOtp = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-// Helper: Dispatch OTP via BullMQ or directly via Resend if Redis is offline
+// Helper: Dispatch OTP via direct Resend API (instant delivery) with BullMQ fallback
 const dispatchOtpEmail = async (email, otp, type = "verification_otp") => {
-    // 1. If Redis is online and ready, queue the email via BullMQ
-    if (redisConnection && redisConnection.status === "ready") {
-        try {
-            await emailQueue.add("send-verification-otp", {
-                email,
-                type,
-                data: { otp },
-            });
-            return;
-        } catch (queueErr) {
-            console.warn("⚠️ [Queue Notice] Redis is offline. Falling back to direct email.");
-        }
-    }
-
-    // 2. Direct Resend fallback (guarantees delivery even if local Redis is down)
+    // 1. Send directly through Resend API for instant inbox delivery
     if (resendClient) {
         try {
             const subject =
@@ -64,9 +50,23 @@ const dispatchOtpEmail = async (email, otp, type = "verification_otp") => {
                 console.error("❌ [Resend Error]:", error);
             } else {
                 console.log(`✅ [Direct Resend] Sent OTP email to ${email} (ID: ${data?.id})`);
+                return;
             }
         } catch (resendErr) {
             console.error("❌ [Direct Resend Exception]:", resendErr.message);
+        }
+    }
+
+    // 2. Fallback: Queue via BullMQ if Redis is ready
+    if (redisConnection && redisConnection.status === "ready") {
+        try {
+            await emailQueue.add("send-verification-otp", {
+                email,
+                type,
+                data: { otp },
+            });
+        } catch (queueErr) {
+            console.warn("⚠️ [Queue Notice]:", queueErr.message);
         }
     }
 };
