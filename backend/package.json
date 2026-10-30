@@ -11,7 +11,7 @@
     "start": "node src/index.js",
     "worker": "nodemon src/workers/email.worker.js",
     "seed:schemes": "node src/scripts/seedRealSchemes.js",
-    "test": "node --test test/rag-retrieval.test.js && node --test test/rag-indexing.test.js && node test/config.test.js"
+    "test": "node --test test/ingestion.test.js && node --test test/rag-retrieval.test.js && node --test test/rag-indexing.test.js && node test/config.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",
@@ -31,6 +31,7 @@
     "mongoose": "^9.11.4",
     "morgan": "^1.12.1",
     "multer": "^1.4.5-lts.1",
+    "pdf-parse": "^2.4.5",
     "rate-limit-redis": "^4.2.0",
     "resend": "^6.35.0"
   },

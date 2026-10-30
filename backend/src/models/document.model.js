@@ -143,6 +143,64 @@ const documentSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+
+    // --- Official Policy Document Ingestion (Commit 7) ---
+    officialSourceUrl: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    effectiveDate: {
+      type: Date,
+      default: null,
+    },
+    language: {
+      type: String,
+      default: "en",
+      trim: true,
+    },
+    sourceVersion: {
+      type: String,
+      default: "1.0",
+      trim: true,
+    },
+    retrievedAt: {
+      type: Date,
+      default: null,
+    },
+    contentHash: {
+      type: String,
+      default: "",
+      index: true,
+      trim: true,
+    },
+    ingestionStatus: {
+      type: String,
+      enum: ["pending", "fetching", "extracting", "processing", "indexed", "failed", "requires_ocr"],
+      default: "pending",
+      index: true,
+    },
+    ingestionError: {
+      type: String,
+      default: null,
+    },
+    metadataProvenance: {
+      officialSource: {
+        type: Map,
+        of: String,
+        default: () => new Map(),
+      },
+      adminSupplied: {
+        type: Map,
+        of: String,
+        default: () => new Map(),
+      },
+      systemInferred: {
+        type: Map,
+        of: String,
+        default: () => new Map(),
+      },
+    },
   },
   { timestamps: true }
 );

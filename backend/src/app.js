@@ -15,6 +15,7 @@ import analysisRouter from "./routes/analysis.routes.js";
 import exploreRouter from "./routes/explore.routes.js";
 import profileRouter from "./routes/userProfile.routes.js";
 import eligibilityRouter from "./routes/eligibility.routes.js";
+import documentRouter from "./routes/document.routes.js";
 
 const app = express();
 
@@ -54,6 +55,7 @@ app.use("/api/v1/analyze", analysisRouter);
 app.use("/api/v1/explore", exploreRouter);
 app.use("/api/v1/profile", profileRouter);
 app.use("/api/v1/eligibility", eligibilityRouter);
+app.use("/api/v1/documents", documentRouter);
 
 // Health check (used by Render / Railway deployment platforms)
 app.get("/health", (req, res) => {
