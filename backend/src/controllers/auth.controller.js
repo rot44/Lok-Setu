@@ -110,12 +110,23 @@ export const registerUser = asyncHandler(async (req, res) => {
         });
     }
 
-    // 5. Push OTP email job to BullMQ queue (Non-blocking, responds in <50ms!)
-    await emailQueue.add("send-verification-otp", {
-        email: user.email,
-        type: "verification_otp",
-        data: { otp: verificationOtp },
-    });
+    // 5. Push OTP email job to BullMQ queue (Non-blocking)
+    try {
+        await emailQueue.add("send-verification-otp", {
+            email: user.email,
+            type: "verification_otp",
+            data: { otp: verificationOtp },
+        });
+    } catch (queueErr) {
+        console.warn("⚠️ [Queue Notice] Redis is offline. Email queue job skipped.");
+    }
+
+    // Dev mode OTP console print for effortless Postman testing
+    if (process.env.NODE_ENV !== "production") {
+        console.log(`\n==================================================`);
+        console.log(`🔑 [DEV MODE OTP for ${user.email}]: ${verificationOtp}`);
+        console.log(`==================================================\n`);
+    }
 
     return res.status(201).json(
         new APIResponse(
@@ -219,11 +230,21 @@ export const resendVerificationOtp = asyncHandler(async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     // Queue email via BullMQ
-    await emailQueue.add("send-verification-otp", {
-        email: user.email,
-        type: "verification_otp",
-        data: { otp: verificationOtp },
-    });
+    try {
+        await emailQueue.add("send-verification-otp", {
+            email: user.email,
+            type: "verification_otp",
+            data: { otp: verificationOtp },
+        });
+    } catch (queueErr) {
+        console.warn("⚠️ [Queue Notice] Redis is offline. Email queue job skipped.");
+    }
+
+    if (process.env.NODE_ENV !== "production") {
+        console.log(`\n==================================================`);
+        console.log(`🔑 [DEV MODE RESEND OTP for ${user.email}]: ${verificationOtp}`);
+        console.log(`==================================================\n`);
+    }
 
     return res.status(200).json(
         new APIResponse(200, {}, "A fresh verification OTP has been sent to your email.")
@@ -382,11 +403,21 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     await user.save({ validateBeforeSave: false });
 
     // Queue email via BullMQ
-    await emailQueue.add("send-forgot-password-otp", {
-        email: user.email,
-        type: "forgot_password_otp",
-        data: { otp: forgotPasswordOtp },
-    });
+    try {
+        await emailQueue.add("send-forgot-password-otp", {
+            email: user.email,
+            type: "forgot_password_otp",
+            data: { otp: forgotPasswordOtp },
+        });
+    } catch (queueErr) {
+        console.warn("⚠️ [Queue Notice] Redis is offline. Email queue job skipped.");
+    }
+
+    if (process.env.NODE_ENV !== "production") {
+        console.log(`\n==================================================`);
+        console.log(`🔑 [DEV MODE FORGOT PASSWORD OTP for ${user.email}]: ${forgotPasswordOtp}`);
+        console.log(`==================================================\n`);
+    }
 
     return res
         .status(200)
