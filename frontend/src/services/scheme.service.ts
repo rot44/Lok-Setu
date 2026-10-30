@@ -5,6 +5,7 @@ import {
   SchemeDetailResponseData,
   ExploreFiltersMetadata,
 } from "@/types/scheme";
+import { SchemeAudioResponse } from "@/types/voice";
 
 export const schemeService = {
   getSchemes: async (params?: ExploreQueryParams): Promise<ExploreSchemesResponseData> => {
@@ -19,5 +20,9 @@ export const schemeService = {
 
   getFiltersMetadata: async (): Promise<ExploreFiltersMetadata> => {
     return api.get<ExploreFiltersMetadata>("/explore/filters-meta");
+  },
+
+  getOrSynthesizeAudio: async (id: string, language?: string): Promise<SchemeAudioResponse> => {
+    return api.post<SchemeAudioResponse>(`/explore/${id}/audio`, { language });
   },
 };

@@ -84,7 +84,7 @@ const userAnalyzedDocumentSchema = new mongoose.Schema(
       },
     ],
 
-    // Generated Voice Audio on S3
+    // Generated Voice Audio on S3 (via Sarvam Bulbul TTS)
     audioUrl: {
       type: String,
     },
@@ -92,6 +92,12 @@ const userAnalyzedDocumentSchema = new mongoose.Schema(
       type: String,
     },
     voiceName: {
+      type: String,
+    },
+    audioDurationSeconds: {
+      type: Number,
+    },
+    audioLanguage: {
       type: String,
     },
   },

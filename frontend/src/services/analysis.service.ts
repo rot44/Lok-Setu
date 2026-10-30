@@ -1,4 +1,5 @@
 import { api } from "@/services/api";
+import { NoticeAudioResponse } from "@/types/voice";
 
 export interface NoticeCitation {
   chunkId: string;
@@ -106,5 +107,12 @@ export const analysisService = {
     return await api.get<{ totalCount: number; history: UserAnalyzedHistoryItem[] }>(
       "/analyze/history"
     );
+  },
+
+  /**
+   * Generates or fetches voice explainer audio for an analyzed notice (Sarvam Bulbul TTS)
+   */
+  async getOrSynthesizeNoticeAudio(documentId: string, language?: string): Promise<NoticeAudioResponse> {
+    return await api.post<NoticeAudioResponse>(`/analyze/${documentId}/audio`, { language });
   },
 };

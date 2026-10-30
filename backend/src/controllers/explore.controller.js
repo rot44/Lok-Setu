@@ -1,8 +1,11 @@
+import mongoose from "mongoose";
 import { Document } from "../models/document.model.js";
 import { Explainer } from "../models/explainer.model.js";
 import { ApiError } from "../utils/apiError.js";
 import { APIResponse } from "../utils/apiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { sarvamService, toTwoLetterLang, SARVAM_LANGUAGE_NAMES } from "../services/sarvam.service.js";
+import { uploadAudioToS3, isStorageConfigured } from "../utils/s3Uploader.js";
 
 /**
  * Helper to build Age Filter from UI Age Group ranges
@@ -278,3 +281,125 @@ export const getFiltersMetadata = asyncHandler(async (req, res) => {
     );
 });
 
+/**
+ * @desc    Generate or retrieve cached audio explainer for a scheme/policy
+ * @route   POST /api/v1/explore/:id/audio
+ *          GET  /api/v1/explore/:id/audio
+ * @access  Public
+ */
+export const getOrGenerateSchemeAudio = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const requestedLang = req.body?.language || req.query?.language || "hi";
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        throw new ApiError(400, "Invalid scheme document ID format.");
+    }
+
+    const languageCode = toTwoLetterLang(requestedLang);
+    const document = await Document.findById(id);
+    if (!document) {
+        throw new ApiError(404, "Scheme or policy document not found.");
+    }
+
+    // 1. Check for existing cached audio explainer for this scheme + language
+    const existingExplainer = await Explainer.findOne({
+        documentId: id,
+        languageCode,
+    });
+
+    if (existingExplainer?.audio?.audioUrl) {
+        return res.status(200).json(
+            new APIResponse(
+                200,
+                {
+                    documentId: id,
+                    languageCode,
+                    languageName: existingExplainer.languageName || SARVAM_LANGUAGE_NAMES[languageCode] || "Hindi",
+                    audioUrl: existingExplainer.audio.audioUrl,
+                    durationSeconds: existingExplainer.audio.durationSeconds || 0,
+                    mimeType: existingExplainer.audio.mimeType || "audio/wav",
+                    voiceName: existingExplainer.audio.voiceName || "shubh",
+                    title: document.title,
+                    plainSummary: existingExplainer.plainSummary,
+                    isCached: true,
+                },
+                "Cached audio explainer retrieved."
+            )
+        );
+    }
+
+    // 2. Determine text to synthesize
+    let summaryText = existingExplainer?.plainSummary;
+    if (!summaryText) {
+        if (document.description && document.description.trim()) {
+            summaryText = document.description.trim();
+        } else {
+            const rightsStr = Array.isArray(document.keyRights) && document.keyRights.length > 0
+                ? document.keyRights.join(". ")
+                : "";
+            summaryText = `${document.title}. ${document.issuingAuthority ? "Issued by " + document.issuingAuthority + "." : ""} ${rightsStr}`.trim();
+        }
+    }
+
+    // 3. If target language is not English, ensure summary is translated
+    if (languageCode !== "en") {
+        const transResult = await sarvamService.translateText(summaryText, languageCode, "auto");
+        if (transResult?.translatedText) {
+            summaryText = transResult.translatedText;
+        }
+    }
+
+    // 4. Synthesize speech using Sarvam Bulbul TTS
+    const ttsResult = await sarvamService.synthesizeSpeech(summaryText, languageCode);
+
+    // 5. Upload audio WAV buffer to S3 (or fallback to data URI in test/unconfigured environments)
+    let audioUrl = "";
+    let s3Key = "";
+
+    if (isStorageConfigured()) {
+        const uploaded = await uploadAudioToS3(ttsResult.audioBuffer, id, languageCode);
+        audioUrl = uploaded.publicUrl;
+        s3Key = uploaded.s3Key;
+    } else {
+        audioUrl = `data:audio/wav;base64,${ttsResult.audioBuffer.toString("base64")}`;
+        s3Key = `audio/explainers/${id}-${languageCode}.wav`;
+    }
+
+    // 6. Cache audio & plain summary in Explainer model
+    const languageName = SARVAM_LANGUAGE_NAMES[languageCode] || "Hindi";
+    const explainer = await Explainer.findOneAndUpdate(
+        { documentId: id, languageCode },
+        {
+            $set: {
+                languageName,
+                plainSummary: summaryText,
+                "audio.audioUrl": audioUrl,
+                "audio.s3Key": s3Key,
+                "audio.mimeType": "audio/wav",
+                "audio.voiceName": ttsResult.speaker,
+                "audio.durationSeconds": ttsResult.durationSeconds,
+                generatedByModel: ttsResult.model,
+            },
+        },
+        { upsert: true, new: true }
+    );
+
+    return res.status(200).json(
+        new APIResponse(
+            200,
+            {
+                documentId: id,
+                languageCode,
+                languageName,
+                audioUrl: explainer.audio.audioUrl,
+                durationSeconds: explainer.audio.durationSeconds,
+                mimeType: explainer.audio.mimeType,
+                voiceName: explainer.audio.voiceName,
+                title: document.title,
+                plainSummary: explainer.plainSummary,
+                isCached: false,
+            },
+            "Audio explainer synthesized and cached successfully."
+        )
+    );
+});

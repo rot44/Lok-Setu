@@ -7,16 +7,57 @@ import {
   ArrowRight,
   MapPin,
   CheckCircle2,
+  Volume2,
+  VolumeX,
+  Loader2,
 } from "lucide-react";
 import { SchemeSummary } from "@/types/scheme";
 import { Card } from "@/components/ui/Card";
 import { cn } from "@/utils/cn";
+import { useAudio } from "@/context/AudioContext";
+import { useLanguage } from "@/context/LanguageContext";
+import { schemeService } from "@/services/scheme.service";
 
 interface SchemeCardProps {
   scheme: SchemeSummary;
 }
 
 export const SchemeCard: React.FC<SchemeCardProps> = ({ scheme }) => {
+  const { language } = useLanguage();
+  const { currentTrack, isPlaying, playTrack, togglePlayPause } = useAudio();
+  const [loadingAudio, setLoadingAudio] = React.useState(false);
+
+  const isThisPlaying = currentTrack?.id === scheme._id && isPlaying;
+
+  const handleQuickPlay = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (currentTrack?.id === scheme._id) {
+      togglePlayPause();
+      return;
+    }
+
+    try {
+      setLoadingAudio(true);
+      const audioRes = await schemeService.getOrSynthesizeAudio(scheme._id, language);
+      playTrack({
+        id: scheme._id,
+        title: scheme.title,
+        audioUrl: audioRes.audioUrl,
+        language: audioRes.languageCode || language,
+        authority: scheme.issuingAuthority,
+        durationSeconds: audioRes.durationSeconds,
+        source: "scheme",
+        plainSummary: audioRes.plainSummary,
+      });
+    } catch {
+      // safe fallback
+    } finally {
+      setLoadingAudio(false);
+    }
+  };
+
   const isCentral = scheme.jurisdictionLevel?.toLowerCase() === "central";
   const isState = scheme.jurisdictionLevel?.toLowerCase() === "state";
 
@@ -154,6 +195,23 @@ export const SchemeCard: React.FC<SchemeCardProps> = ({ scheme }) => {
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={handleQuickPlay}
+            disabled={loadingAudio}
+            className="p-1.5 text-neel-muted hover:text-vermilion hover:bg-paper rounded transition-colors focus:outline-none"
+            title={isThisPlaying ? "Pause audio explainer" : "Listen to voice explainer"}
+            aria-label={isThisPlaying ? `Pause voice explainer for ${scheme.title}` : `Listen to voice explainer for ${scheme.title}`}
+          >
+            {loadingAudio ? (
+              <Loader2 className="h-4 w-4 animate-spin text-vermilion" />
+            ) : isThisPlaying ? (
+              <VolumeX className="h-4 w-4 text-vermilion" />
+            ) : (
+              <Volume2 className="h-4 w-4" />
+            )}
+          </button>
+
           {scheme.officialPortalUrl && (
             <a
               href={scheme.officialPortalUrl}

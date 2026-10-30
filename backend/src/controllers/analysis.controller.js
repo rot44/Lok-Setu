@@ -6,7 +6,8 @@ import { UserAnalyzedDocument } from "../models/userAnalyzedDocument.model.js";
 import { ApiError } from "../utils/apiError.js";
 import { APIResponse } from "../utils/apiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { uploadUserNoticeToS3, downloadFileBufferFromS3 } from "../utils/s3Uploader.js";
+import { uploadUserNoticeToS3, downloadFileBufferFromS3, uploadUserNoticeAudioToS3, getPresignedDownloadUrl, isStorageConfigured } from "../utils/s3Uploader.js";
+import { sarvamService, toTwoLetterLang } from "../services/sarvam.service.js";
 import { detectFileTypeFromMagicBytes, computeFileSha256 } from "../utils/fileValidator.js";
 import { noticeAnalysisService } from "../services/noticeAnalysis.service.js";
 import { validateLanguage } from "../services/civicAnalysis.service.js";
@@ -494,4 +495,145 @@ export const getAnalyzedDocumentById = asyncHandler(async (req, res) => {
     return res.status(200).json(
         new APIResponse(200, doc, "Document details retrieved successfully.")
     );
+});
+
+/**
+ * @desc    Generate or retrieve cached audio explainer for a private citizen notice
+ * @route   POST /api/v1/analyze/:id/audio
+ * @access  Private (Requires verifyJWT)
+ */
+export const getOrGenerateNoticeAudio = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const requestedLang = req.body?.language || req.query?.language;
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        throw new ApiError(400, "Invalid document ID format.");
+    }
+
+    const doc = await UserAnalyzedDocument.findOne({
+        _id: id,
+        user: req.user._id, // Strict ownership guard
+    });
+
+    if (!doc) {
+        throw new ApiError(404, "Document not found or access denied.");
+    }
+
+    if (doc.status !== "analyzed" || !doc.primaryExplanation?.summary) {
+        throw new ApiError(400, "Document must be analyzed before audio can be generated.");
+    }
+
+    const languageCode = toTwoLetterLang(requestedLang || doc.primaryExplanation.language || "hi");
+
+    // Check if audio is already generated for this document in this language
+    if (doc.audioUrl && doc.audioLanguage === languageCode) {
+        return res.status(200).json(
+            new APIResponse(
+                200,
+                {
+                    documentId: doc._id,
+                    fileName: doc.fileName,
+                    language: languageCode,
+                    audioUrl: doc.audioUrl,
+                    durationSeconds: doc.audioDurationSeconds || 0,
+                    voiceName: doc.voiceName || "shubh",
+                    isCached: true,
+                },
+                "Cached notice audio retrieved."
+            )
+        );
+    }
+
+    let summaryText = doc.primaryExplanation.summary;
+    if (languageCode !== (doc.primaryExplanation.language || "hi")) {
+        const transResult = await sarvamService.translateText(summaryText, languageCode, "auto");
+        if (transResult?.translatedText) {
+            summaryText = transResult.translatedText;
+        }
+    }
+
+    const ttsResult = await sarvamService.synthesizeSpeech(summaryText, languageCode);
+
+    let audioUrl = "";
+    let s3Key = "";
+
+    if (isStorageConfigured()) {
+        const uploaded = await uploadUserNoticeAudioToS3(ttsResult.audioBuffer, req.user._id, doc._id, languageCode);
+        s3Key = uploaded.s3Key;
+        audioUrl = await getPresignedDownloadUrl(uploaded.s3Key, 86400);
+    } else {
+        audioUrl = "data:audio/wav;base64," + ttsResult.audioBuffer.toString("base64");
+        s3Key = "user-uploads/" + req.user._id + "/audio/" + doc._id + "-" + languageCode + ".wav";
+    }
+
+    doc.audioUrl = audioUrl;
+    doc.audioS3Key = s3Key;
+    doc.audioDurationSeconds = ttsResult.durationSeconds;
+    doc.audioLanguage = languageCode;
+    doc.voiceName = ttsResult.speaker;
+    await doc.save();
+
+    return res.status(200).json(
+        new APIResponse(
+            200,
+            {
+                documentId: doc._id,
+                fileName: doc.fileName,
+                language: languageCode,
+                audioUrl: doc.audioUrl,
+                durationSeconds: doc.audioDurationSeconds,
+                voiceName: doc.voiceName,
+                summary: summaryText,
+                isCached: false,
+            },
+            "Notice audio synthesized successfully."
+        )
+    );
+});
+
+/**
+ * @desc    Stream or download private notice audio with strict authentication & ownership
+ * @route   GET /api/v1/analyze/:id/audio
+ * @access  Private (Requires verifyJWT)
+ */
+export const streamNoticeAudio = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        throw new ApiError(400, "Invalid document ID format.");
+    }
+
+    const doc = await UserAnalyzedDocument.findOne({
+        _id: id,
+        user: req.user._id, // Strict ownership guard
+    });
+
+    if (!doc) {
+        throw new ApiError(404, "Document not found or access denied.");
+    }
+
+    if (!doc.audioUrl && !doc.audioS3Key) {
+        throw new ApiError(404, "Audio has not been synthesized for this notice. Please request synthesis first.");
+    }
+
+    if (isStorageConfigured() && doc.audioS3Key) {
+        const buffer = await downloadFileBufferFromS3(doc.audioS3Key);
+        res.setHeader("Content-Type", "audio/wav");
+        res.setHeader("Content-Length", buffer.length);
+        res.setHeader("Cache-Control", "private, no-transform, max-age=3600");
+        return res.status(200).send(buffer);
+    }
+
+    if (doc.audioUrl) {
+        if (doc.audioUrl.startsWith("data:")) {
+            const base64Data = doc.audioUrl.split(",")[1];
+            const buffer = Buffer.from(base64Data, "base64");
+            res.setHeader("Content-Type", "audio/wav");
+            res.setHeader("Content-Length", buffer.length);
+            return res.status(200).send(buffer);
+        }
+        return res.redirect(doc.audioUrl);
+    }
+
+    throw new ApiError(404, "Audio file not available.");
 });

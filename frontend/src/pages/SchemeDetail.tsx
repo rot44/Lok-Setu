@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   Building2,
@@ -10,6 +10,7 @@ import {
   XCircle,
   Volume2,
   VolumeX,
+  Loader2,
   ArrowLeft,
   ShieldCheck,
   Briefcase,
@@ -26,6 +27,7 @@ import { Card, CardTitle } from "@/components/ui/Card";
 import { Alert } from "@/components/ui/Alert";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { cn } from "@/utils/cn";
+import { useAudio } from "@/context/AudioContext";
 
 const NOT_SPECIFIED = "This document does not clearly specify this information.";
 
@@ -37,9 +39,9 @@ export const SchemeDetailPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedExplainerIndex, setSelectedExplainerIndex] = useState<number>(0);
-  const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
+  const [isSynthesizingAudio, setIsSynthesizingAudio] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const { currentTrack, isPlaying, playTrack, togglePlayPause } = useAudio();
 
   const fetchScheme = useCallback(async () => {
     if (!id) return;
@@ -66,12 +68,7 @@ export const SchemeDetailPage: React.FC = () => {
 
   useEffect(() => {
     fetchScheme();
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-    };
+
   }, [fetchScheme]);
 
   const activeExplainer: SchemeExplainer | undefined =
@@ -79,24 +76,51 @@ export const SchemeDetailPage: React.FC = () => {
       ? data.availableExplainers[selectedExplainerIndex]
       : undefined;
 
-  const toggleAudio = () => {
-    if (!activeExplainer?.audio?.audioUrl) return;
+  const isCurrentTrackPlaying = currentTrack?.id === id && isPlaying;
 
-    if (!audioRef.current) {
-      const audio = new Audio(activeExplainer.audio.audioUrl);
-      audio.onended = () => setIsPlayingAudio(false);
-      audio.onerror = () => setIsPlayingAudio(false);
-      audio.play();
-      audioRef.current = audio;
-      setIsPlayingAudio(true);
-    } else {
-      if (isPlayingAudio) {
-        audioRef.current.pause();
-        setIsPlayingAudio(false);
-      } else {
-        audioRef.current.play();
-        setIsPlayingAudio(true);
-      }
+  const handlePlaySchemeAudio = async () => {
+    if (!id || !data?.document) return;
+
+    if (currentTrack?.id === id) {
+      togglePlayPause();
+      return;
+    }
+
+    if (activeExplainer?.audio?.audioUrl) {
+      playTrack({
+        id,
+        title: data.document.title,
+        audioUrl: activeExplainer.audio.audioUrl,
+        language: activeExplainer.languageCode,
+        authority: data.document.issuingAuthority,
+        durationSeconds: activeExplainer.audio.durationSeconds,
+        source: "scheme",
+        plainSummary: activeExplainer.plainSummary,
+      });
+      return;
+    }
+
+    try {
+      setIsSynthesizingAudio(true);
+      const audioRes = await schemeService.getOrSynthesizeAudio(
+        id,
+        activeExplainer?.languageCode || language
+      );
+      playTrack({
+        id,
+        title: data.document.title,
+        audioUrl: audioRes.audioUrl,
+        language: audioRes.languageCode,
+        authority: data.document.issuingAuthority,
+        durationSeconds: audioRes.durationSeconds,
+        source: "scheme",
+        plainSummary: audioRes.plainSummary,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to synthesize voice explainer.";
+      setError(msg);
+    } finally {
+      setIsSynthesizingAudio(false);
     }
   };
 
@@ -331,37 +355,45 @@ export const SchemeDetailPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Audio Player if URL exists */}
-              {activeExplainer?.audio?.audioUrl && (
-                <div className="flex items-center justify-between p-3 rounded bg-white border border-paper-border shadow-xs">
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={toggleAudio}
-                      className="p-2 rounded-full bg-vermilion text-white hover:bg-vermilion-dark transition-colors shadow-xs"
-                      aria-label={isPlayingAudio ? "Pause Audio Explainer" : "Play Audio Explainer"}
-                    >
-                      {isPlayingAudio ? (
-                        <VolumeX className="h-4 w-4" />
-                      ) : (
-                        <Volume2 className="h-4 w-4" />
-                      )}
-                    </button>
-                    <div>
-                      <div className="text-xs font-bold text-neel">Spoken Explainer</div>
-                      <div className="text-[11px] text-neel-muted">
-                        {activeExplainer.languageName || "Regional"} Audio Voice Overview
-                        {activeExplainer.audio.durationSeconds && (
-                          <span> ({Math.round(activeExplainer.audio.durationSeconds)}s)</span>
-                        )}
-                      </div>
+              {/* Spoken Explainer Audio Strip */}
+              <div className="flex items-center justify-between p-3 rounded bg-white border border-paper-border shadow-xs">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handlePlaySchemeAudio}
+                    disabled={isSynthesizingAudio}
+                    className="p-2 rounded-full bg-vermilion text-white hover:bg-vermilion-dark transition-colors shadow-xs flex items-center justify-center disabled:opacity-75"
+                    aria-label={isCurrentTrackPlaying ? "Pause Audio Explainer" : "Play Audio Explainer"}
+                  >
+                    {isSynthesizingAudio ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : isCurrentTrackPlaying ? (
+                      <VolumeX className="h-4 w-4" />
+                    ) : (
+                      <Volume2 className="h-4 w-4" />
+                    )}
+                  </button>
+                  <div>
+                    <div className="text-xs font-bold text-neel">
+                      Spoken Explainer (Sarvam Bulbul)
+                    </div>
+                    <div className="text-[11px] text-neel-muted">
+                      {activeExplainer?.languageName || "Regional"} Audio Voice Overview
+                      {activeExplainer?.audio?.durationSeconds ? (
+                        <span> ({Math.round(activeExplainer.audio.durationSeconds)}s)</span>
+                      ) : null}
                     </div>
                   </div>
-                  <span className="text-[10px] font-mono uppercase bg-paper px-2 py-1 rounded text-neel-muted">
-                    S3 Audio
-                  </span>
                 </div>
-              )}
+                <button
+                  type="button"
+                  onClick={handlePlaySchemeAudio}
+                  disabled={isSynthesizingAudio}
+                  className="text-xs font-semibold px-2.5 py-1 rounded bg-paper-dark hover:bg-paper-border text-neel transition-colors"
+                >
+                  {isSynthesizingAudio ? "Synthesizing..." : isCurrentTrackPlaying ? "Pause" : "Listen Now"}
+                </button>
+              </div>
 
               {/* Plain Summary Text */}
               <div className="space-y-2">

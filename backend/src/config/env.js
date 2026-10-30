@@ -58,12 +58,21 @@ export const config = {
         timeoutMs: parseInt(process.env.GEMINI_TIMEOUT_MS, 10) || 30000,
         maxRetries: parseInt(process.env.GEMINI_MAX_RETRIES, 10) || 3,
     },
+    sarvam: {
+        apiKey: process.env.SARVAM_API_KEY || "",
+        translationModel: process.env.SARVAM_TRANSLATION_MODEL || "sarvam-translate:v1",
+        ttsModel: process.env.SARVAM_TTS_MODEL || "bulbul:v3",
+        defaultSpeaker: process.env.SARVAM_DEFAULT_SPEAKER || "shubh",
+        timeoutMs: parseInt(process.env.SARVAM_TIMEOUT_MS, 10) || 30000,
+        maxRetries: parseInt(process.env.SARVAM_MAX_RETRIES, 10) || 3,
+    },
 };
 
 /**
  * Service capability checks.
  */
 export const isAiConfigured = () => Boolean(config.ai.geminiApiKey);
+export const isSarvamConfigured = () => Boolean(config.sarvam.apiKey);
 export const isStorageConfigured = () =>
     Boolean(config.storage.bucketName && config.storage.accessKeyId && config.storage.secretAccessKey);
 export const isEmailConfigured = () => Boolean(config.email.apiKey);
@@ -119,6 +128,14 @@ export const getSanitizedConfigSummary = () => {
             timeoutMs: config.ai.timeoutMs,
             keyMasked: maskSecret(config.ai.geminiApiKey),
         },
+        sarvam: {
+            configured: isSarvamConfigured(),
+            translationModel: config.sarvam.translationModel,
+            ttsModel: config.sarvam.ttsModel,
+            defaultSpeaker: config.sarvam.defaultSpeaker,
+            timeoutMs: config.sarvam.timeoutMs,
+            keyMasked: maskSecret(config.sarvam.apiKey),
+        },
         storage: {
             configured: isStorageConfigured(),
             region: config.storage.region,
@@ -147,6 +164,7 @@ export const logStartupDiagnostics = () => {
     console.log(`• Database (MongoDB) : ${summary.database.configured ? `✅ (${summary.database.dbName})` : "❌ Missing MONGODB_URI"}`);
     console.log(`• Authentication     : ${summary.auth.accessTokenConfigured && summary.auth.refreshTokenConfigured ? "✅ JWT Secrets Present" : "⚠️  JWT Secrets Missing (Auth will fail)"}`);
     console.log(`• Gemini AI Service  : ${summary.ai.configured ? `✅ Configured [${summary.ai.model}]` : "⚠️  Unconfigured (Set GEMINI_API_KEY)"}`);
+    console.log(`• Sarvam AI Voice    : ${summary.sarvam.configured ? `✅ Configured [${summary.sarvam.ttsModel} / ${summary.sarvam.translationModel}]` : "⚠️  Unconfigured (Set SARVAM_API_KEY)"}`);
     console.log(`• Redis / BullMQ     : ✅ Target: ${summary.redis.urlProvided ? "via REDIS_URL" : `${summary.redis.host}:${summary.redis.port}`}`);
     console.log(`• Object Storage (S3): ${summary.storage.configured ? `✅ Bucket: ${summary.storage.bucket}` : "⚠️  Unconfigured (S3 uploads disabled)"}`);
     console.log(`• Email (Resend)     : ${summary.email.configured ? `✅ Active (${summary.email.from})` : "⚠️  Unconfigured (Emails will fail)"}`);

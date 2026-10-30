@@ -15,9 +15,13 @@ import {
   Scale,
   HelpCircle,
   Lock,
+  Volume2,
+  VolumeX,
+  Loader2,
 } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
+import { useAudio } from "@/context/AudioContext";
 import { Button } from "@/components/ui/Button";
 import { Alert } from "@/components/ui/Alert";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/Card";
@@ -31,13 +35,49 @@ type ProcessingStep = "idle" | "uploading" | "analyzing" | "completed" | "ocr_re
 export const AnalyzeDocument: React.FC = () => {
   const { language, t } = useLanguage();
   const { isAuthenticated, isInitialized } = useAuth();
+  const { currentTrack, isPlaying, playTrack, togglePlayPause } = useAudio();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isSynthesizingAudio, setIsSynthesizingAudio] = useState<boolean>(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+
   const [status, setStatus] = useState<ProcessingStep>("idle");
   const [analysis, setAnalysis] = useState<NoticeAnalysis | null>(null);
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [ocrNotice, setOcrNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const isCurrentNoticePlaying = Boolean(documentId && currentTrack?.id === documentId && isPlaying);
+
+  const handlePlayNoticeAudio = async () => {
+    if (!documentId) return;
+
+    if (currentTrack?.id === documentId) {
+      togglePlayPause();
+      return;
+    }
+
+    try {
+      setIsSynthesizingAudio(true);
+      setAudioError(null);
+      const audioRes = await analysisService.getOrSynthesizeNoticeAudio(documentId, language);
+      playTrack({
+        id: documentId,
+        title: selectedFile?.name || "Official Notice",
+        audioUrl: audioRes.audioUrl,
+        language: audioRes.language,
+        durationSeconds: audioRes.durationSeconds,
+        source: "notice",
+        plainSummary: audioRes.summary,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to synthesize notice audio.";
+      setAudioError(msg);
+    } finally {
+      setIsSynthesizingAudio(false);
+    }
+  };
+
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -339,16 +379,46 @@ export const AnalyzeDocument: React.FC = () => {
           {/* Plain-Language Summary */}
           <Card accent="vermilion">
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <CardTitle className="flex items-center gap-2">
                   <ShieldCheck className="h-5 w-5 text-vermilion" />
                   <span>Plain-Language Summary</span>
                 </CardTitle>
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-paper-dark text-neel">
-                  Zero Legalese
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handlePlayNoticeAudio}
+                    disabled={isSynthesizingAudio}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-vermilion hover:bg-vermilion-dark text-white text-xs font-semibold shadow-xs transition-colors disabled:opacity-75 focus:outline-none focus:ring-2 focus:ring-vermilion/50"
+                    aria-label={isCurrentNoticePlaying ? "Pause Audio Summary" : "Listen to Audio Summary"}
+                  >
+                    {isSynthesizingAudio ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : isCurrentNoticePlaying ? (
+                      <VolumeX className="h-3.5 w-3.5" />
+                    ) : (
+                      <Volume2 className="h-3.5 w-3.5" />
+                    )}
+                    <span>
+                      {isSynthesizingAudio
+                        ? "Synthesizing..."
+                        : isCurrentNoticePlaying
+                        ? "Pause Audio"
+                        : "Listen (" + language.toUpperCase() + ")"}
+                    </span>
+                  </button>
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-paper-dark text-neel">
+                    Zero Legalese
+                  </span>
+                </div>
               </div>
             </CardHeader>
+            {audioError && (
+              <div className="px-6 pb-2 text-xs text-vermilion flex items-center gap-1.5">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                <span>{audioError}</span>
+              </div>
+            )}
             <CardContent>
               <p className="text-sm text-neel leading-relaxed font-serif">
                 {analysis.summary}

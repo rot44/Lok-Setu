@@ -5,6 +5,8 @@ import {
     executeDocumentAnalysis,
     getUserAnalysisHistory,
     getAnalyzedDocumentById,
+    getOrGenerateNoticeAudio,
+    streamNoticeAudio,
 } from "../controllers/analysis.controller.js";
 import { verifyJWT } from "../middlewares/auth.middleware.js";
 import { upload } from "../middlewares/multer.middleware.js";
@@ -23,7 +25,11 @@ router.post("/upload", upload.single("document"), uploadDocumentForAnalysis);
 // 3. Execute notice analysis and structured rights extraction
 router.post("/:id/execute", executeDocumentAnalysis);
 
-// 4. User analysis history & single document details (for Dashboard / Revisit)
+// 4. Voice Explainer Audio (Sarvam Bulbul TTS)
+router.post("/:id/audio", getOrGenerateNoticeAudio);
+router.get("/:id/audio", streamNoticeAudio);
+
+// 5. User analysis history & single document details (for Dashboard / Revisit)
 router.get("/history", getUserAnalysisHistory);
 router.get("/:id", getAnalyzedDocumentById);
 
