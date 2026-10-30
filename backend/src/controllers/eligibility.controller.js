@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { Document } from "../models/document.model.js";
 import { UserProfile } from "../models/userProfile.model.js";
 import { APIResponse } from "../utils/apiResponse.js";
@@ -7,7 +8,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 /**
  * Pure rule-evaluator comparing citizen profile against scheme eligibility criteria
  */
-const evaluateEligibility = (citizenData, scheme) => {
+export const evaluateEligibility = (citizenData, scheme) => {
     const rules = scheme.eligibilityRules || {};
     const passedCriteria = [];
     const failedCriteria = [];
@@ -35,7 +36,11 @@ const evaluateEligibility = (citizenData, scheme) => {
         const normalizedGender = citizenData.gender.toLowerCase();
         const allowedGenders = rules.genders.map((g) => g.toLowerCase());
 
-        if (allowedGenders.includes("all") || allowedGenders.includes(normalizedGender)) {
+        if (
+            allowedGenders.includes("all") ||
+            allowedGenders.includes(normalizedGender) ||
+            normalizedGender === "all"
+        ) {
             passedCriteria.push(`Gender (${citizenData.gender}) matches scheme criteria.`);
         } else {
             failedCriteria.push(`Scheme is exclusively for ${rules.genders.join(", ")} applicants.`);
@@ -47,7 +52,7 @@ const evaluateEligibility = (citizenData, scheme) => {
         const citizenState = citizenData.state.toLowerCase();
         const schemeState = (scheme.applicableState || "ALL").toLowerCase();
 
-        if (schemeState === "all" || schemeState === citizenState) {
+        if (schemeState === "all" || schemeState === citizenState || citizenState === "all") {
             passedCriteria.push(`State (${citizenData.state}) is eligible.`);
         } else {
             failedCriteria.push(`Scheme is restricted to residents of ${scheme.applicableState}.`);
@@ -59,7 +64,11 @@ const evaluateEligibility = (citizenData, scheme) => {
         const citizenCaste = citizenData.caste.toLowerCase();
         const allowedCastes = rules.castes.map((c) => c.toLowerCase());
 
-        if (allowedCastes.includes("all") || allowedCastes.includes(citizenCaste)) {
+        if (
+            allowedCastes.includes("all") ||
+            allowedCastes.includes(citizenCaste) ||
+            citizenCaste === "all"
+        ) {
             passedCriteria.push(`Category (${citizenData.caste}) is eligible.`);
         } else {
             failedCriteria.push(`Restricted to categories: ${rules.castes.join(", ")}.`);
@@ -71,7 +80,11 @@ const evaluateEligibility = (citizenData, scheme) => {
         const citizenOcc = citizenData.occupation.toLowerCase();
         const allowedOcc = rules.occupations.map((o) => o.toLowerCase());
 
-        if (allowedOcc.includes("all") || allowedOcc.includes(citizenOcc)) {
+        if (
+            allowedOcc.includes("all") ||
+            allowedOcc.includes(citizenOcc) ||
+            citizenOcc === "all"
+        ) {
             passedCriteria.push(`Occupation (${citizenData.occupation}) meets scheme criteria.`);
         } else {
             failedCriteria.push(`Targeted to occupations: ${rules.occupations.join(", ")}.`);
@@ -109,12 +122,29 @@ const evaluateEligibility = (citizenData, scheme) => {
 };
 
 /**
+ * Safely fetches citizen profile without Mongoose buffering timeouts when offline or in tests.
+ */
+const safeFindProfile = async (req) => {
+    if (req.userProfile !== undefined) {
+        return req.userProfile;
+    }
+    if (req.user && mongoose.connection && mongoose.connection.readyState === 1) {
+        return await UserProfile.findOne({ user: req.user._id }).catch(() => null);
+    }
+    return null;
+};
+
+/**
  * @desc    Check eligibility for a single scheme by ID
  * @route   POST /api/v1/eligibility/check/:documentId
  * @access  Public or Authenticated
  */
 export const checkSingleSchemeEligibility = asyncHandler(async (req, res) => {
     const { documentId } = req.params;
+
+    if (!documentId || !mongoose.Types.ObjectId.isValid(documentId)) {
+        throw new ApiError(400, "Invalid scheme document ID format.");
+    }
 
     const scheme = await Document.findById(documentId);
     if (!scheme || !scheme.isActive) {
@@ -125,7 +155,7 @@ export const checkSingleSchemeEligibility = asyncHandler(async (req, res) => {
     let citizenData = req.body || {};
 
     if (req.user && (!citizenData.state || !citizenData.age)) {
-        const profile = await UserProfile.findOne({ user: req.user._id });
+        const profile = await safeFindProfile(req);
         if (profile) {
             citizenData = {
                 age: citizenData.age ?? profile.age,
@@ -153,7 +183,7 @@ export const checkSingleSchemeEligibility = asyncHandler(async (req, res) => {
                 ...evaluation,
             },
             evaluation.isEligible
-                ? "Congratulations! You are eligible for this scheme. 🎉"
+                ? "You may be eligible for this scheme based on preliminary criteria."
                 : "You do not meet all criteria for this scheme."
         )
     );
@@ -168,7 +198,7 @@ export const matchAllEligibleSchemes = asyncHandler(async (req, res) => {
     let citizenData = req.body || {};
 
     if (req.user && (!citizenData.state || !citizenData.age)) {
-        const profile = await UserProfile.findOne({ user: req.user._id });
+        const profile = await safeFindProfile(req);
         if (profile) {
             citizenData = {
                 age: citizenData.age ?? profile.age,
@@ -225,9 +255,9 @@ export const matchAllEligibleSchemes = asyncHandler(async (req, res) => {
                 totalPartiallyEligible: partiallyEligibleSchemes.length,
                 eligibleSchemes,
                 partiallyEligibleSchemes,
+                evaluationNotice: "Preliminary assessment only. Final eligibility is determined by the relevant government authority.",
             },
-            `Found ${eligibleSchemes.length} schemes matching your eligibility criteria.`
+            `Found ${eligibleSchemes.length} potential scheme matches based on your criteria.`
         )
     );
 });
-

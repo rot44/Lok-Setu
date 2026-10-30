@@ -21,7 +21,7 @@ export const Home: React.FC = () => {
     {
       title: t("home.card1.title"),
       desc: t("home.card1.desc"),
-      to: "/schemes?filter=eligible",
+      to: "/eligibility",
       icon: CheckCircle2,
       accent: "neel" as const,
       badge: "Eligibility Engine",

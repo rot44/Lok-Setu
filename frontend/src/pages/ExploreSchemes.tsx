@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import {
   Search,
   Filter,
@@ -14,6 +14,7 @@ import {
   HeartPulse,
   Briefcase,
   Users,
+  CheckCircle2,
 } from "lucide-react";
 import { schemeService } from "@/services/scheme.service";
 import {
@@ -213,6 +214,28 @@ export const ExploreSchemes: React.FC = () => {
           )}
         </div>
       </div>
+
+      {searchParams.get("filter") === "eligible" && (
+        <div className="p-4 rounded-lg bg-neel/5 border border-neel/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="h-5 w-5 text-vermilion mt-0.5 shrink-0" />
+            <div>
+              <h3 className="font-serif font-bold text-neel text-sm">
+                Looking for your personalized scheme eligibility?
+              </h3>
+              <p className="text-xs text-neel-muted mt-0.5 leading-relaxed">
+                Complete our interactive demographic questionnaire to see schemes matching your state, age, category, and occupation with criteria breakdowns.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/eligibility"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded bg-vermilion text-white font-medium text-xs hover:bg-vermilion-dark transition-colors self-start sm:self-auto shrink-0 shadow-xs"
+          >
+            Open Eligibility Questionnaire →
+          </Link>
+        </div>
+      )}
 
       {/* Tabs Strip: All / Welfare Schemes / Policies / Circulars */}
       <div className="flex items-center gap-2 border-b border-paper-border overflow-x-auto pb-1 text-sm font-semibold">

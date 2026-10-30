@@ -5,6 +5,7 @@ import { ExploreSchemes } from "@/pages/ExploreSchemes";
 import { SchemeDetailPage } from "@/pages/SchemeDetail";
 import { AnalyzeDocument } from "@/pages/AnalyzeDocument";
 import { CivicAssistant } from "@/pages/CivicAssistant";
+import { EligibilityQuestionnaire } from "@/pages/EligibilityQuestionnaire";
 import { NotificationsFeed } from "@/pages/NotificationsFeed";
 import { NotFound } from "@/pages/NotFound";
 import { Login } from "@/pages/auth/Login";
@@ -32,6 +33,10 @@ export const router = createBrowserRouter([
       {
         path: "schemes/:id",
         element: <SchemeDetailPage />,
+      },
+      {
+        path: "eligibility",
+        element: <EligibilityQuestionnaire />,
       },
       {
         path: "analyze",
