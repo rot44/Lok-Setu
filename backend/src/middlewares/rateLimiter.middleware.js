@@ -10,6 +10,11 @@ const redisClient = process.env.REDIS_URL
           port: parseInt(process.env.REDIS_PORT) || 6379,
       });
 
+redisClient.on("error", (err) => {
+    // Graceful warning — prevents unhandled error event crash when Redis is offline
+    console.warn("⚠️ Rate-limit Redis warning:", err.message);
+});
+
 // General API rate limiter — applied globally on all routes
 export const apiRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minute window
