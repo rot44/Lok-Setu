@@ -10,7 +10,8 @@
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "worker": "nodemon src/workers/email.worker.js",
-    "seed:schemes": "node src/scripts/seedRealSchemes.js"
+    "seed:schemes": "node src/scripts/seedRealSchemes.js",
+    "test": "node test/config.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",

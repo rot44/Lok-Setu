@@ -4,13 +4,19 @@ dotenv.config({ path: "./.env" });
 import { Worker } from "bullmq";
 import { Resend } from "resend";
 import { redisConnection } from "../queues/email.queue.js";
+import { config, isEmailConfigured } from "../config/env.js";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize Resend safely (fallback to dummy string to avoid instant crash if key unset)
+const resend = new Resend(config.email.apiKey || "re_not_configured");
 
-console.log("📧 Lok Setu Email Worker running...");
+if (!isEmailConfigured()) {
+    console.warn("⚠️  [EmailWorker] RESEND_API_KEY is not configured. Email delivery will fail for queued jobs.");
+} else {
+    console.log("📧 [EmailWorker] Lok Setu Email Worker active.");
+}
 
 // Helper to build email content based on job type
-const buildEmailContent = (type, data) => {
+const buildEmailContent = (type, data = {}) => {
     // Verification OTP: Sent on registration
     if (type === "verification_otp") {
         return {
@@ -20,7 +26,7 @@ const buildEmailContent = (type, data) => {
                     <h2 style="color:#2563eb;margin-bottom:8px;">🏛️ Welcome to Lok Setu</h2>
                     <p style="color:#6b7280;margin-bottom:24px;">Apna account verify karne ke liye neeche diya gaya OTP darj karein:</p>
                     <div style="background:#eff6ff;padding:20px;border-radius:8px;text-align:center;font-size:32px;font-weight:bold;letter-spacing:8px;color:#1d4ed8;">
-                        ${data.otp}
+                        ${data.otp || "------"}
                     </div>
                     <p style="color:#9ca3af;font-size:13px;margin-top:20px;">
                         ⏳ Yeh OTP sirf <strong>10 minute</strong> tak valid hai.<br/>
@@ -40,7 +46,7 @@ const buildEmailContent = (type, data) => {
                     <h2 style="color:#dc2626;margin-bottom:8px;">🔒 Password Reset Request</h2>
                     <p style="color:#6b7280;margin-bottom:24px;">Apna password reset karne ke liye neeche diya OTP use karein:</p>
                     <div style="background:#fef2f2;padding:20px;border-radius:8px;text-align:center;font-size:32px;font-weight:bold;letter-spacing:8px;color:#b91c1c;">
-                        ${data.otp}
+                        ${data.otp || "------"}
                     </div>
                     <p style="color:#9ca3af;font-size:13px;margin-top:20px;">
                         ⏳ Yeh OTP sirf <strong>10 minute</strong> tak valid hai.<br/>
@@ -54,14 +60,14 @@ const buildEmailContent = (type, data) => {
     // New policy / scheme alert notification
     if (type === "policy_alert") {
         return {
-            subject: `📢 New Government Update: ${data.title}`,
+            subject: `📢 New Government Update: ${data.title || "Policy Update"}`,
             html: `
                 <div style="font-family:Arial,sans-serif;max-width:500px;margin:auto;padding:30px;border:1px solid #e5e7eb;border-radius:12px;color:#1f2937;">
                     <h2 style="color:#16a34a;margin-bottom:8px;">🏛️ New Policy Alert</h2>
                     <p style="color:#6b7280;">Aapke region mein ek nayi sarkari yojana / notification aayi hai:</p>
-                    <h3 style="color:#1f2937;margin:16px 0 8px;">${data.title}</h3>
-                    <p style="color:#374151;margin-bottom:8px;"><strong>Issuing Authority:</strong> ${data.authority}</p>
-                    <p style="color:#4b5563;margin-bottom:20px;">${data.summary}</p>
+                    <h3 style="color:#1f2937;margin:16px 0 8px;">${data.title || "Government Scheme"}</h3>
+                    <p style="color:#374151;margin-bottom:8px;"><strong>Issuing Authority:</strong> ${data.authority || "Government of India"}</p>
+                    <p style="color:#4b5563;margin-bottom:20px;">${data.summary || ""}</p>
                     ${
                         data.portalUrl
                             ? `<a href="${data.portalUrl}" style="background:#2563eb;color:white;padding:12px 20px;text-decoration:none;border-radius:8px;display:inline-block;font-weight:bold;">
@@ -94,10 +100,16 @@ export const emailWorker = new Worker(
             return;
         }
 
+        if (!isEmailConfigured()) {
+            const errMsg = "Resend email service is not configured. Set RESEND_API_KEY in environment.";
+            console.error(`❌ [EmailWorker] ${errMsg}`);
+            throw new Error(errMsg);
+        }
+
         const { subject, html } = buildEmailContent(type, data);
 
         const { error } = await resend.emails.send({
-            from: process.env.RESEND_FROM_EMAIL || "Lok Setu <onboarding@resend.dev>",
+            from: config.email.fromEmail,
             to: email,
             subject,
             html,
@@ -117,3 +129,14 @@ emailWorker.on("failed", (job, err) => {
     console.error(`❌ [EmailWorker] Job ${job?.id} (${job?.data?.type}) failed: ${err?.message}`);
 });
 
+/**
+ * Gracefully shuts down the BullMQ email worker.
+ */
+export const closeEmailWorker = async () => {
+    try {
+        await emailWorker.close();
+        console.log("🛑 [BullMQ] Email worker closed cleanly.");
+    } catch (error) {
+        console.error("⚠️ Error while closing email worker:", error.message);
+    }
+};
