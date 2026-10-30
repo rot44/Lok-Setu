@@ -2,9 +2,6 @@ import mongoose from "mongoose";
 import {
   DOCUMENT_TYPES,
   JURISDICTION_LEVELS,
-  GENDERS,
-  CASTE_CATEGORIES,
-  INCOME_RANGES,
 } from "../constants.js";
 
 const documentSchema = new mongoose.Schema(
@@ -126,6 +123,26 @@ const documentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+
+    // --- Indexing & Vector Search Metadata (Commit 5) ---
+    indexingStatus: {
+      type: String,
+      enum: ["unindexed", "indexing", "indexed", "failed"],
+      default: "unindexed",
+      index: true,
+    },
+    indexedChunkCount: {
+      type: Number,
+      default: 0,
+    },
+    lastIndexedAt: {
+      type: Date,
+      default: null,
+    },
+    indexingError: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true }
 );
@@ -141,4 +158,3 @@ documentSchema.index({
 });
 
 export const Document = mongoose.model("Document", documentSchema);
-
