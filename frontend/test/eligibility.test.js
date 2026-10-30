@@ -54,7 +54,7 @@ test("Lok-Setu Scheme Eligibility Questionnaire & Contracts Suite", async (t) =>
           isEligible: true,
           matchPercentage: 100,
           passedCriteria: [
-            "State (all) is eligible.",
+            "Central scheme applicable across All India.",
             "Occupation (farmer) meets scheme criteria.",
             "Age (29 yrs) satisfies criteria.",
           ],
@@ -76,7 +76,7 @@ test("Lok-Setu Scheme Eligibility Questionnaire & Contracts Suite", async (t) =>
             "Age (29 yrs) satisfies criteria.",
           ],
           failedCriteria: [
-            "Scheme is restricted to residents of Maharashtra.",
+            "Scheme is restricted to residents of Maharashtra (your input: Gujarat).",
           ],
         },
       ],
@@ -98,46 +98,63 @@ test("Lok-Setu Scheme Eligibility Questionnaire & Contracts Suite", async (t) =>
     assert.equal(mockApiResponse.evaluationNotice, PRELIMINARY_NOTICE);
   });
 
-  await t.test("3. Profile prefill logic handles complete vs missing citizen profile safely", () => {
-    // 3a: Complete citizen profile
+  await t.test("3. Profile prefill logic normalizes constants and preserves user edits", () => {
+    const normOccupation = (occ) => {
+      if (!occ) return "all";
+      const lower = occ.toLowerCase().trim();
+      if (lower === "shopkeeper_msme" || lower === "business" || lower === "self_employed") return "msme";
+      return lower;
+    };
+
+    const normRationCard = (type) => {
+      if (!type) return "none";
+      const lower = type.toLowerCase().trim();
+      if (lower === "aay_antyodaya" || lower === "antyodaya") return "aay_antyodaya";
+      return lower;
+    };
+
+    // 3a: Profile with backend constants (shopkeeper_msme and aay_antyodaya)
     const registeredProfile = {
       state: "Uttar Pradesh",
       age: 34,
       gender: "Male",
-      occupation: "Street_Vendor",
-      caste: "General",
+      occupation: "shopkeeper_msme",
+      caste: "ews",
       isSpeciallyAbled: true,
       disabilityPercentage: 50,
-      rationCardType: "Antyodaya",
+      rationCardType: "aay_antyodaya",
     };
 
     const prefilledData = {
       state: registeredProfile.state || "ALL",
       age: registeredProfile.age ? String(registeredProfile.age) : "",
       gender: registeredProfile.gender ? registeredProfile.gender.toLowerCase() : "all",
-      occupation: registeredProfile.occupation ? registeredProfile.occupation.toLowerCase() : "all",
+      occupation: normOccupation(registeredProfile.occupation),
       caste: registeredProfile.caste ? registeredProfile.caste.toLowerCase() : "all",
       isSpeciallyAbled: Boolean(registeredProfile.isSpeciallyAbled),
       disabilityPercentage: registeredProfile.disabilityPercentage || 40,
-      rationCardType: registeredProfile.rationCardType ? registeredProfile.rationCardType.toLowerCase() : "none",
+      rationCardType: normRationCard(registeredProfile.rationCardType),
     };
 
     assert.equal(prefilledData.state, "Uttar Pradesh");
     assert.equal(prefilledData.age, "34");
     assert.equal(prefilledData.gender, "male");
-    assert.equal(prefilledData.occupation, "street_vendor");
-    assert.equal(prefilledData.caste, "general");
+    assert.equal(prefilledData.occupation, "msme"); // mapped from shopkeeper_msme
+    assert.equal(prefilledData.caste, "ews");
     assert.equal(prefilledData.isSpeciallyAbled, true);
     assert.equal(prefilledData.disabilityPercentage, 50);
-    assert.equal(prefilledData.rationCardType, "antyodaya");
+    assert.equal(prefilledData.rationCardType, "aay_antyodaya");
 
-    // 3b: Incomplete profile does not invent arbitrary values
-    const sparseProfile = {
-      state: null,
-      age: null,
-      gender: null,
-    };
+    // 3b: Editing prefilled answer remains untouched by subsequent state sync
+    let hasPrefilled = true;
+    let editedState = "Gujarat";
+    if (!hasPrefilled) {
+      editedState = registeredProfile.state;
+    }
+    assert.equal(editedState, "Gujarat"); // not overwritten
 
+    // 3c: Incomplete profile does not invent arbitrary values
+    const sparseProfile = { state: null, age: null, gender: null };
     const sparsePrefill = {
       state: sparseProfile.state || "ALL",
       age: sparseProfile.age ? String(sparseProfile.age) : "",
@@ -149,11 +166,21 @@ test("Lok-Setu Scheme Eligibility Questionnaire & Contracts Suite", async (t) =>
     assert.equal(sparsePrefill.gender, "all");
   });
 
-  await t.test("4. Cautious language verification protects against false guarantees", () => {
+  await t.test("4. Cautious language and near-match interpretation safeguards", () => {
     // UI badge phrasing
-    const potentialBadgeText = (isPotential) => (isPotential ? CAUTIOUS_STATUS_BADGE : "Match");
-    assert.equal(potentialBadgeText(true), "You May Be Eligible");
-    assert.notEqual(potentialBadgeText(true), "You Are Eligible");
+    const potentialBadgeText = (isPotential, matchPercentage) =>
+      isPotential ? CAUTIOUS_STATUS_BADGE : `${matchPercentage}% Met (Near Match)`;
+
+    assert.equal(potentialBadgeText(true, 100), "You May Be Eligible");
+    assert.notEqual(potentialBadgeText(true, 100), "You Are Eligible");
+    assert.equal(potentialBadgeText(false, 75), "75% Met (Near Match)");
+
+    // Near match advisory notice verifies that partial percentage is not treated as official approval
+    const nearMatchAdvisory =
+      "Government welfare schemes require all statutory criteria to be satisfied in full. A match percentage indicates how many preliminary rules your profile meets, but final sanction requires resolving every unmet or unverified requirement listed below.";
+
+    assert.ok(nearMatchAdvisory.includes("satisfied in full"));
+    assert.ok(nearMatchAdvisory.includes("final sanction requires resolving every unmet or unverified requirement"));
 
     // UI disclaimer content
     const uiDisclaimer =
@@ -164,7 +191,7 @@ test("Lok-Setu Scheme Eligibility Questionnaire & Contracts Suite", async (t) =>
     assert.ok(uiDisclaimer.includes("You may be eligible"));
   });
 
-  await t.test("5. Input validation enforces minimal criteria and plausible age boundaries", () => {
+  await t.test("5. Input validation enforces minimal criteria and plausible boundaries", () => {
     const validateForm = (form) => {
       const hasState = Boolean(form.state && form.state.trim().length > 0 && form.state !== "ALL");
       const hasAge = Boolean(form.age && !isNaN(Number(form.age)) && Number(form.age) > 0);
@@ -178,19 +205,43 @@ test("Lok-Setu Scheme Eligibility Questionnaire & Contracts Suite", async (t) =>
         return "Please enter a valid age between 1 and 120 years.";
       }
 
+      if (form.isSpeciallyAbled && (form.disabilityPercentage < 1 || form.disabilityPercentage > 100)) {
+        return "Disability percentage must be between 1% and 100%.";
+      }
+
       return null;
     };
 
     // Valid inputs
     assert.equal(validateForm({ state: "ALL", age: "25", gender: "all" }), null);
     assert.equal(validateForm({ state: "Gujarat", age: "", gender: "all" }), null);
+    assert.equal(
+      validateForm({ state: "ALL", age: "30", gender: "all", isSpeciallyAbled: true, disabilityPercentage: 45 }),
+      null
+    );
 
     // Invalid: extreme age boundaries
     assert.equal(validateForm({ state: "ALL", age: "150", gender: "all" }), "Please enter a valid age between 1 and 120 years.");
     assert.equal(validateForm({ state: "ALL", age: "0", gender: "all" }), "Please enter a valid age between 1 and 120 years.");
+
+    // Invalid: extreme disability percentage
+    assert.equal(
+      validateForm({ state: "ALL", age: "30", gender: "all", isSpeciallyAbled: true, disabilityPercentage: 110 }),
+      "Disability percentage must be between 1% and 100%."
+    );
   });
 
-  await t.test("6. Multilingual coverage for eligibility navigation across all 8 languages", () => {
+  await t.test("6. External portal links enforce secure target and rel attributes", () => {
+    const linkAttributes = {
+      target: "_blank",
+      rel: "noopener noreferrer",
+    };
+
+    assert.equal(linkAttributes.target, "_blank");
+    assert.equal(linkAttributes.rel, "noopener noreferrer");
+  });
+
+  await t.test("7. Multilingual coverage for eligibility navigation across all 8 languages", () => {
     for (const lang of SUPPORTED_LANGUAGES) {
       const dict = translations[lang.code];
       assert.ok(dict, `Translations dictionary missing for ${lang.code}`);

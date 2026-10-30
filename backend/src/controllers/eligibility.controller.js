@@ -6,15 +6,21 @@ import { ApiError } from "../utils/apiError.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 /**
- * Pure rule-evaluator comparing citizen profile against scheme eligibility criteria
+ * Pure rule-evaluator comparing citizen profile against scheme eligibility criteria.
+ * Enforces strict government qualification: missing or unspecified citizen answers
+ * do NOT silently satisfy restrictive criteria.
  */
-export const evaluateEligibility = (citizenData, scheme) => {
+export const evaluateEligibility = (citizenData = {}, scheme = {}) => {
     const rules = scheme.eligibilityRules || {};
     const passedCriteria = [];
     const failedCriteria = [];
 
     // 1. Age Verification
     const age = Number(citizenData.age);
+    const hasAgeRestriction =
+        (rules.minAge !== undefined && rules.minAge > 0) ||
+        (rules.maxAge !== undefined && rules.maxAge < 120);
+
     if (!isNaN(age) && age > 0) {
         if (rules.minAge && age < rules.minAge) {
             failedCriteria.push(
@@ -29,66 +35,116 @@ export const evaluateEligibility = (citizenData, scheme) => {
                 `Age (${age} yrs) satisfies criteria (${rules.minAge || 0} - ${rules.maxAge || "No limit"}).`
             );
         }
+    } else if (hasAgeRestriction) {
+        failedCriteria.push(
+            `Scheme requires applicant age between ${rules.minAge || 0} and ${rules.maxAge || 120} years (age not provided in questionnaire).`
+        );
+    } else {
+        passedCriteria.push("No age restrictions.");
     }
 
     // 2. Gender Verification
-    if (citizenData.gender && rules.genders?.length) {
-        const normalizedGender = citizenData.gender.toLowerCase();
-        const allowedGenders = rules.genders.map((g) => g.toLowerCase());
+    const hasGenderRestriction =
+        rules.genders?.length > 0 &&
+        !rules.genders.map((g) => String(g).toLowerCase()).includes("all");
+    const normalizedGender = citizenData.gender ? String(citizenData.gender).toLowerCase().trim() : "";
 
-        if (
-            allowedGenders.includes("all") ||
-            allowedGenders.includes(normalizedGender) ||
-            normalizedGender === "all"
-        ) {
+    if (hasGenderRestriction) {
+        const allowedGenders = rules.genders.map((g) => String(g).toLowerCase());
+        if (normalizedGender && normalizedGender !== "all" && allowedGenders.includes(normalizedGender)) {
             passedCriteria.push(`Gender (${citizenData.gender}) matches scheme criteria.`);
         } else {
-            failedCriteria.push(`Scheme is exclusively for ${rules.genders.join(", ")} applicants.`);
+            failedCriteria.push(
+                `Scheme is exclusively for ${rules.genders.join(", ")} applicants${
+                    normalizedGender && normalizedGender !== "all"
+                        ? ` (your input: ${citizenData.gender})`
+                        : " (specific gender not provided in questionnaire)"
+                }.`
+            );
         }
+    } else {
+        passedCriteria.push("Open to all genders.");
     }
 
     // 3. State / Regional Jurisdiction
-    if (citizenData.state) {
-        const citizenState = citizenData.state.toLowerCase();
-        const schemeState = (scheme.applicableState || "ALL").toLowerCase();
+    const schemeState = (scheme.applicableState || "ALL").toLowerCase().trim();
+    const isCentralScheme = schemeState === "all";
+    const citizenState = citizenData.state ? String(citizenData.state).toLowerCase().trim() : "";
 
-        if (schemeState === "all" || schemeState === citizenState || citizenState === "all") {
-            passedCriteria.push(`State (${citizenData.state}) is eligible.`);
+    if (isCentralScheme) {
+        passedCriteria.push(
+            citizenState && citizenState !== "all"
+                ? `Central scheme applicable across All India (including ${citizenData.state}).`
+                : "Central scheme applicable across All India."
+        );
+    } else {
+        // State-restricted scheme requires verified residence in that state
+        if (citizenState && citizenState !== "all" && citizenState === schemeState) {
+            passedCriteria.push(`Resident state (${citizenData.state}) satisfies jurisdiction criteria.`);
         } else {
-            failedCriteria.push(`Scheme is restricted to residents of ${scheme.applicableState}.`);
+            failedCriteria.push(
+                `Scheme is restricted to residents of ${scheme.applicableState}${
+                    citizenState && citizenState !== "all"
+                        ? ` (your input: ${citizenData.state})`
+                        : " (state-specific jurisdiction not provided)"
+                }.`
+            );
         }
     }
 
     // 4. Caste / Social Category
-    if (citizenData.caste && rules.castes?.length) {
-        const citizenCaste = citizenData.caste.toLowerCase();
-        const allowedCastes = rules.castes.map((c) => c.toLowerCase());
+    const hasCasteRestriction =
+        rules.castes?.length > 0 &&
+        !rules.castes.map((c) => String(c).toLowerCase()).includes("all");
+    const citizenCaste = citizenData.caste ? String(citizenData.caste).toLowerCase().trim() : "";
 
-        if (
-            allowedCastes.includes("all") ||
-            allowedCastes.includes(citizenCaste) ||
-            citizenCaste === "all"
-        ) {
-            passedCriteria.push(`Category (${citizenData.caste}) is eligible.`);
+    if (hasCasteRestriction) {
+        const allowedCastes = rules.castes.map((c) => String(c).toLowerCase());
+        if (citizenCaste && citizenCaste !== "all" && allowedCastes.includes(citizenCaste)) {
+            passedCriteria.push(`Social category (${citizenData.caste}) is eligible.`);
         } else {
-            failedCriteria.push(`Restricted to categories: ${rules.castes.join(", ")}.`);
+            failedCriteria.push(
+                `Restricted to categories: ${rules.castes.join(", ")}${
+                    citizenCaste && citizenCaste !== "all"
+                        ? ` (your input: ${citizenData.caste})`
+                        : " (specific category not provided in questionnaire)"
+                }.`
+            );
         }
+    } else {
+        passedCriteria.push("Open to all social categories.");
     }
 
     // 5. Occupation / Livelihood
-    if (citizenData.occupation && rules.occupations?.length) {
-        const citizenOcc = citizenData.occupation.toLowerCase();
-        const allowedOcc = rules.occupations.map((o) => o.toLowerCase());
+    const hasOccRestriction =
+        rules.occupations?.length > 0 &&
+        !rules.occupations.map((o) => String(o).toLowerCase()).includes("all");
+    const citizenOcc = citizenData.occupation ? String(citizenData.occupation).toLowerCase().trim() : "";
 
-        if (
-            allowedOcc.includes("all") ||
-            allowedOcc.includes(citizenOcc) ||
-            citizenOcc === "all"
-        ) {
+    // Synonyms / aliases for MSME, business owners, and self-employed
+    const msmeAliases = ["msme", "business", "self_employed", "shopkeeper_msme"];
+
+    if (hasOccRestriction) {
+        const allowedOcc = rules.occupations.map((o) => String(o).toLowerCase());
+        const isMatch =
+            citizenOcc &&
+            citizenOcc !== "all" &&
+            (allowedOcc.includes(citizenOcc) ||
+                (msmeAliases.includes(citizenOcc) && allowedOcc.some((o) => msmeAliases.includes(o))));
+
+        if (isMatch) {
             passedCriteria.push(`Occupation (${citizenData.occupation}) meets scheme criteria.`);
         } else {
-            failedCriteria.push(`Targeted to occupations: ${rules.occupations.join(", ")}.`);
+            failedCriteria.push(
+                `Targeted to occupations: ${rules.occupations.join(", ")}${
+                    citizenOcc && citizenOcc !== "all"
+                        ? ` (your input: ${citizenData.occupation})`
+                        : " (occupation not provided in questionnaire)"
+                }.`
+            );
         }
+    } else {
+        passedCriteria.push("Open to all occupations.");
     }
 
     // 6. Disability / Divyangjan Status

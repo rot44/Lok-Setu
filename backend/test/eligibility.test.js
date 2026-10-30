@@ -10,7 +10,7 @@ import { Document } from "../src/models/document.model.js";
 import { ApiError } from "../src/utils/apiError.js";
 
 test("Eligibility Evaluation Engine Suite", async (t) => {
-    await t.test("1. Age rule evaluation", () => {
+    await t.test("1. Age rule evaluation and missing answer protection", () => {
         const scheme = {
             applicableState: "ALL",
             eligibilityRules: { minAge: 18, maxAge: 60 },
@@ -30,9 +30,14 @@ test("Eligibility Evaluation Engine Suite", async (t) => {
         const resOver = evaluateEligibility({ age: 65, state: "ALL" }, scheme);
         assert.equal(resOver.isEligible, false);
         assert.ok(resOver.failedCriteria.some((c) => c.includes("exceeds maximum eligible age of 60")));
+
+        // Missing age on age-restricted scheme must fail rather than silently qualify
+        const resMissingAge = evaluateEligibility({ state: "ALL" }, scheme);
+        assert.equal(resMissingAge.isEligible, false);
+        assert.ok(resMissingAge.failedCriteria.some((c) => c.includes("age not provided in questionnaire")));
     });
 
-    await t.test("2. Gender rule evaluation and case insensitivity", () => {
+    await t.test("2. Gender rule evaluation and restriction semantics", () => {
         const schemeFemaleOnly = {
             applicableState: "ALL",
             eligibilityRules: { genders: ["female"] },
@@ -46,7 +51,7 @@ test("Eligibility Evaluation Engine Suite", async (t) => {
         // Fails male
         const resMale = evaluateEligibility({ gender: "male", state: "ALL" }, schemeFemaleOnly);
         assert.equal(resMale.isEligible, false);
-        assert.ok(resMale.failedCriteria.some((c) => c.includes("exclusively for female")));
+        assert.ok(resMale.failedCriteria.some((c) => c.includes("exclusively for female applicants (your input: male)")));
 
         // Universal gender scheme allows any citizen gender
         const schemeAllGenders = {
@@ -55,10 +60,12 @@ test("Eligibility Evaluation Engine Suite", async (t) => {
         };
         const resAny = evaluateEligibility({ gender: "transgender", state: "ALL" }, schemeAllGenders);
         assert.equal(resAny.isEligible, true);
+        assert.ok(resAny.passedCriteria.some((c) => c.includes("Open to all genders")));
 
-        // Citizen selecting "all" / general matches specific scheme
+        // Citizen selecting "all" / unspecified MUST NOT silently qualify for female-only scheme
         const resCitAll = evaluateEligibility({ gender: "all", state: "ALL" }, schemeFemaleOnly);
-        assert.equal(resCitAll.isEligible, true);
+        assert.equal(resCitAll.isEligible, false);
+        assert.ok(resCitAll.failedCriteria.some((c) => c.includes("specific gender not provided in questionnaire")));
     });
 
     await t.test("3. State and regional jurisdiction evaluation", () => {
@@ -70,6 +77,7 @@ test("Eligibility Evaluation Engine Suite", async (t) => {
         // Resident of Maharashtra matches
         const resMh = evaluateEligibility({ state: "Maharashtra" }, mhScheme);
         assert.equal(resMh.isEligible, true);
+        assert.ok(resMh.passedCriteria.some((c) => c.includes("Resident state (Maharashtra) satisfies")));
 
         // Case-insensitive state matching
         const resMhLower = evaluateEligibility({ state: "maharashtra" }, mhScheme);
@@ -78,15 +86,21 @@ test("Eligibility Evaluation Engine Suite", async (t) => {
         // Resident of another state fails
         const resBihar = evaluateEligibility({ state: "Bihar" }, mhScheme);
         assert.equal(resBihar.isEligible, false);
-        assert.ok(resBihar.failedCriteria.some((c) => c.includes("restricted to residents of Maharashtra")));
+        assert.ok(resBihar.failedCriteria.some((c) => c.includes("restricted to residents of Maharashtra (your input: Bihar)")));
 
-        // Central / All-India scheme matches any resident
+        // Citizen selecting "ALL" (All India) does NOT silently qualify as a resident of Maharashtra
+        const resAllIndia = evaluateEligibility({ state: "ALL" }, mhScheme);
+        assert.equal(resAllIndia.isEligible, false);
+        assert.ok(resAllIndia.failedCriteria.some((c) => c.includes("state-specific jurisdiction not provided")));
+
+        // Central / All-India scheme matches any resident or All India selection
         const centralScheme = {
             applicableState: "ALL",
             eligibilityRules: {},
         };
-        const resAnyState = evaluateEligibility({ state: "Tamil Nadu" }, centralScheme);
-        assert.equal(resAnyState.isEligible, true);
+        const resCentralWithState = evaluateEligibility({ state: "Tamil Nadu" }, centralScheme);
+        assert.equal(resCentralWithState.isEligible, true);
+        assert.ok(resCentralWithState.passedCriteria.some((c) => c.includes("Central scheme applicable across All India")));
     });
 
     await t.test("4. Caste / Affirmative category evaluation", () => {
@@ -100,10 +114,15 @@ test("Eligibility Evaluation Engine Suite", async (t) => {
 
         const resGen = evaluateEligibility({ caste: "general", state: "ALL" }, affirmativeScheme);
         assert.equal(resGen.isEligible, false);
-        assert.ok(resGen.failedCriteria.some((c) => c.includes("Restricted to categories: sc, st")));
+        assert.ok(resGen.failedCriteria.some((c) => c.includes("Restricted to categories: sc, st (your input: general)")));
+
+        // Unspecified caste does not silently satisfy affirmative action scheme
+        const resUnspecified = evaluateEligibility({ caste: "all", state: "ALL" }, affirmativeScheme);
+        assert.equal(resUnspecified.isEligible, false);
+        assert.ok(resUnspecified.failedCriteria.some((c) => c.includes("specific category not provided in questionnaire")));
     });
 
-    await t.test("5. Occupation / Livelihood evaluation", () => {
+    await t.test("5. Occupation / Livelihood evaluation and MSME synonyms", () => {
         const kisanScheme = {
             applicableState: "ALL",
             eligibilityRules: { occupations: ["farmer"] },
@@ -114,7 +133,19 @@ test("Eligibility Evaluation Engine Suite", async (t) => {
 
         const resStudent = evaluateEligibility({ occupation: "student", state: "ALL" }, kisanScheme);
         assert.equal(resStudent.isEligible, false);
-        assert.ok(resStudent.failedCriteria.some((c) => c.includes("Targeted to occupations: farmer")));
+        assert.ok(resStudent.failedCriteria.some((c) => c.includes("Targeted to occupations: farmer (your input: student)")));
+
+        // MSME synonym matching (business/self_employed/msme/shopkeeper_msme)
+        const msmeScheme = {
+            applicableState: "ALL",
+            eligibilityRules: { occupations: ["business", "self_employed"] },
+        };
+        const resMsme = evaluateEligibility({ occupation: "msme", state: "ALL" }, msmeScheme);
+        assert.equal(resMsme.isEligible, true);
+        assert.ok(resMsme.passedCriteria.some((c) => c.includes("Occupation (msme) meets scheme criteria")));
+
+        const resShopkeeper = evaluateEligibility({ occupation: "shopkeeper_msme", state: "ALL" }, msmeScheme);
+        assert.equal(resShopkeeper.isEligible, true);
     });
 
     await t.test("6. Specially Abled / Divyangjan condition", () => {
@@ -141,6 +172,9 @@ test("Eligibility Evaluation Engine Suite", async (t) => {
         const resBpl = evaluateEligibility({ rationCardType: "bpl", state: "ALL" }, bplScheme);
         assert.equal(resBpl.isEligible, true);
 
+        const resAay = evaluateEligibility({ rationCardType: "aay_antyodaya", state: "ALL" }, bplScheme);
+        assert.equal(resAay.isEligible, true);
+
         const resNone = evaluateEligibility({ rationCardType: "none", state: "ALL" }, bplScheme);
         assert.equal(resNone.isEligible, false);
         assert.ok(resNone.failedCriteria.some((c) => c.includes("requires an active ration card")));
@@ -157,15 +191,16 @@ test("Eligibility Evaluation Engine Suite", async (t) => {
             },
         };
 
-        // Citizen matches 3 of 4 criteria (age 22: pass, state MH: pass, student: pass, but gender male: fail)
+        // Citizen matches 3 of 4 restricted criteria (age 22: pass, state MH: pass, student: pass, but gender male: fail)
+        // Plus open caste: pass (total 4 passed, 1 failed) -> 4/5 = 80%
         const partialResult = evaluateEligibility(
             { age: 22, state: "Maharashtra", occupation: "student", gender: "male" },
             multiRuleScheme
         );
         assert.equal(partialResult.isEligible, false);
-        assert.equal(partialResult.passedCriteria.length, 3);
+        assert.equal(partialResult.passedCriteria.length, 4);
         assert.equal(partialResult.failedCriteria.length, 1);
-        assert.equal(partialResult.matchPercentage, 75);
+        assert.equal(partialResult.matchPercentage, 80);
     });
 
     await t.test("9. checkSingleSchemeEligibility controller behavior", async () => {
@@ -308,7 +343,7 @@ test("Eligibility Evaluation Engine Suite", async (t) => {
 
             // Test citizen: Age 22, State ALL, Farmer
             // Matches PM-Kisan 100% (Eligible)
-            // Matches Delhi scheme partially (Age 22 is in 18-25: pass, State ALL vs Delhi: pass, occupation farmer vs student: fail) -> 2/3 = 67% (Partially Eligible)
+            // Matches Delhi scheme partially (Age 22 is in 18-25: pass, State ALL vs Delhi: fail, occupation farmer vs student: fail, open gender: pass, open caste: pass) -> 3/5 = 60% (Partially Eligible)
             await matchAllEligibleSchemes(
                 {
                     body: {

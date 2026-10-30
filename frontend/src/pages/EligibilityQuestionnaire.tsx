@@ -56,6 +56,21 @@ export const EligibilityQuestionnaire: React.FC = () => {
   const [hasEvaluated, setHasEvaluated] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<"eligible" | "partial">("eligible");
 
+  // Helper to safely normalize and map citizen profile options
+  const normOccupation = (occ?: string | null) => {
+    if (!occ) return "all";
+    const lower = occ.toLowerCase().trim();
+    if (lower === "shopkeeper_msme" || lower === "business" || lower === "self_employed") return "msme";
+    return lower;
+  };
+
+  const normRationCard = (type?: string | null) => {
+    if (!type) return "none";
+    const lower = type.toLowerCase().trim();
+    if (lower === "aay_antyodaya" || lower === "antyodaya") return "aay_antyodaya";
+    return lower;
+  };
+
   // Pre-fill from citizen profile when available
   useEffect(() => {
     if (isInitialized && isAuthenticated && profile && !hasPrefilled) {
@@ -63,11 +78,11 @@ export const EligibilityQuestionnaire: React.FC = () => {
         state: profile.state || "ALL",
         age: profile.age ? String(profile.age) : "",
         gender: profile.gender ? profile.gender.toLowerCase() : "all",
-        occupation: profile.occupation ? profile.occupation.toLowerCase() : "all",
+        occupation: normOccupation(profile.occupation),
         caste: profile.caste ? profile.caste.toLowerCase() : "all",
         isSpeciallyAbled: Boolean(profile.isSpeciallyAbled),
         disabilityPercentage: profile.disabilityPercentage || 40,
-        rationCardType: profile.rationCardType ? profile.rationCardType.toLowerCase() : "none",
+        rationCardType: normRationCard(profile.rationCardType),
       });
       setHasPrefilled(true);
     }
@@ -165,7 +180,8 @@ export const EligibilityQuestionnaire: React.FC = () => {
     { value: "farmer", label: "Farmer / Agriculture (किसान)" },
     { value: "student", label: "Student / Youth (विद्यार्थी)" },
     { value: "street_vendor", label: "Street Vendor / Hawker (रेहड़ी-पटरी विक्रेता)" },
-    { value: "msme", label: "MSME / Small Business Owner (लघु उद्यमी / व्यापारी)" },
+    { value: "msme", label: "MSME / Small Business / Shopkeeper (लघु उद्यमी / व्यापारी)" },
+    { value: "artisan_craftsperson", label: "Artisan / Craftsperson (शिल्पकार / कारीगर)" },
     { value: "unemployed", label: "Unemployed / Job Seeker (बेरोज़गार)" },
     { value: "other", label: "Other / General Citizen (अन्य)" },
   ];
@@ -173,6 +189,7 @@ export const EligibilityQuestionnaire: React.FC = () => {
   const casteOptions = [
     { value: "all", label: "All Categories / Any" },
     { value: "general", label: "General (सामान्य)" },
+    { value: "ews", label: "EWS (Economically Weaker Section / आर्थिक रूप से कमजोर)" },
     { value: "obc", label: "OBC (अन्य पिछड़ा वर्ग)" },
     { value: "sc", label: "SC (अनुसूचित जाति)" },
     { value: "st", label: "ST (अनुसूचित जनजाति)" },
@@ -181,8 +198,9 @@ export const EligibilityQuestionnaire: React.FC = () => {
   const rationCardOptions = [
     { value: "none", label: "None / Not Applicable" },
     { value: "bpl", label: "BPL Card (Below Poverty Line / गरीबी रेखा से नीचे)" },
-    { value: "antyodaya", label: "Antyodaya (AAY / अंत्योदय अन्न योजना)" },
+    { value: "aay_antyodaya", label: "Antyodaya (AAY / अंत्योदय अन्न योजना)" },
     { value: "apl", label: "APL Card (Above Poverty Line)" },
+    { value: "annapurna", label: "Annapurna Food Scheme Card" },
   ];
 
   return (
@@ -333,11 +351,11 @@ export const EligibilityQuestionnaire: React.FC = () => {
                   <Input
                     label="Certified Disability Percentage (%)"
                     type="number"
-                    min={40}
+                    min={1}
                     max={100}
                     value={formData.disabilityPercentage}
                     onChange={(e) => handleChange("disabilityPercentage", Number(e.target.value))}
-                    helperText="Most Central schemes require 40% or higher benchmark disability"
+                    helperText="Under RPwD Act 2016, Central benchmark welfare benefits typically require 40% or higher certified disability"
                   />
                 </div>
               )}
@@ -472,6 +490,14 @@ export const EligibilityQuestionnaire: React.FC = () => {
           {/* Tab 2: Near Matches */}
           {activeTab === "partial" && (
             <div className="space-y-4">
+              {results.partiallyEligibleSchemes.length > 0 && (
+                <div className="p-3.5 rounded bg-mustard-light/25 border border-mustard/40 text-xs text-neel space-y-1">
+                  <span className="font-bold block">Notice on Near Matches:</span>
+                  <p className="text-neel-muted leading-relaxed">
+                    Government welfare schemes require all statutory criteria to be satisfied in full. A match percentage indicates how many preliminary rules your profile meets, but final sanction requires resolving every unmet or unverified requirement listed below.
+                  </p>
+                </div>
+              )}
               {results.partiallyEligibleSchemes.length === 0 ? (
                 <EmptyState
                   title="No Near Matches Found"
@@ -540,7 +566,7 @@ const SchemeEligibilityCard: React.FC<SchemeEligibilityCardProps> = ({
                 : "bg-mustard-light text-neel-dark"
             }`}
           >
-            {isPotentialMatch ? "You May Be Eligible" : `${scheme.matchPercentage}% Match`}
+            {isPotentialMatch ? "You May Be Eligible" : `${scheme.matchPercentage}% Met (Near Match)`}
           </span>
         </div>
 
