@@ -8,6 +8,10 @@ import morgan from "morgan";
 import { errorHandler } from "./middlewares/error.middleware.js";
 import { apiRateLimiter } from "./middlewares/rateLimiter.middleware.js";
 
+// Route imports
+import authRouter from "./routes/auth.routes.js";
+import notificationRouter from "./routes/notification.routes.js";
+
 const app = express();
 
 // Compress all HTTP responses (gzip/Brotli) — must be first
@@ -39,7 +43,9 @@ app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 // Cookie parser — reads JWT tokens stored in HTTP-only cookies
 app.use(cookieParser());
 
-// ─── Routes (add here as they are built) ─────────────────────────────────────
+// ─── API Routes ─────────────────────────────────────────────────────────────
+app.use("/api/v1/auth", authRouter);
+app.use("/api/v1/notifications", notificationRouter);
 
 // Health check (used by Render / Railway deployment platforms)
 app.get("/health", (req, res) => {
