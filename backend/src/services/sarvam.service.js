@@ -152,8 +152,52 @@ export const chunkTextForSarvam = (text, maxChars = 2000) => {
 };
 
 /**
+ * Safely parses RIFF WAV chunk structure to locate fmt and data subchunks.
+ *
+ * @param {Buffer} buffer
+ * @returns {{ fmtChunk: object|null, dataChunk: object|null }|null}
+ */
+export const parseWavInfo = (buffer) => {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 12) return null;
+    if (buffer.toString("ascii", 0, 4) !== "RIFF" || buffer.toString("ascii", 8, 12) !== "WAVE") {
+        return null;
+    }
+
+    let offset = 12;
+    let fmtChunk = null;
+    let dataChunk = null;
+
+    while (offset + 8 <= buffer.length) {
+        const chunkId = buffer.toString("ascii", offset, offset + 4);
+        const chunkSize = buffer.readUInt32LE(offset + 4);
+
+        if (chunkId === "fmt " && offset + 8 + chunkSize <= buffer.length) {
+            fmtChunk = {
+                offset,
+                size: chunkSize,
+                audioFormat: buffer.readUInt16LE(offset + 8),
+                numChannels: buffer.readUInt16LE(offset + 10),
+                sampleRate: buffer.readUInt32LE(offset + 12),
+                byteRate: buffer.readUInt32LE(offset + 16),
+            };
+        } else if (chunkId === "data") {
+            dataChunk = {
+                headerOffset: offset,
+                dataOffset: offset + 8,
+                dataSize: Math.min(chunkSize, buffer.length - (offset + 8)),
+            };
+            break;
+        }
+
+        offset += 8 + chunkSize;
+    }
+
+    return { fmtChunk, dataChunk };
+};
+
+/**
  * Concatenates multiple WAV buffers into a single valid WAV file.
- * Preserves the 44-byte standard RIFF header from the first buffer and updates total sizes.
+ * Preserves the standard RIFF/WAVE header and updates total ChunkSize and Subchunk2Size.
  *
  * @param {Buffer[]} wavBuffers
  * @returns {Buffer}
@@ -167,26 +211,39 @@ export const concatWavBuffers = (wavBuffers) => {
     }
 
     const first = wavBuffers[0];
-    const isWav =
-        first.length >= 44 &&
-        first.toString("ascii", 0, 4) === "RIFF" &&
-        first.toString("ascii", 8, 12) === "WAVE";
+    const firstInfo = parseWavInfo(first);
 
-    if (!isWav) {
-        // Fallback: simple byte concatenation
+    if (!firstInfo || !firstInfo.dataChunk) {
+        // Fallback: standard 44-byte assumption or byte concatenation
+        if (first.length >= 44 && first.toString("ascii", 0, 4) === "RIFF" && first.toString("ascii", 8, 12) === "WAVE") {
+            const dataChunks = wavBuffers.map((b) => (b.length > 44 ? b.subarray(44) : Buffer.alloc(0)));
+            const combinedData = Buffer.concat(dataChunks);
+            const header = Buffer.from(first.subarray(0, 44));
+            header.writeUInt32LE(36 + combinedData.length, 4);
+            header.writeUInt32LE(combinedData.length, 40);
+            return Buffer.concat([header, combinedData]);
+        }
         return Buffer.concat(wavBuffers);
     }
 
-    // Collect PCM data blocks (skipping 44-byte header of each)
-    const dataChunks = wavBuffers.map((b) => (b.length > 44 ? b.subarray(44) : Buffer.alloc(0)));
+    // Dynamic chunk extraction based on exact data chunk offsets
+    const dataChunks = [];
+    for (const buf of wavBuffers) {
+        const info = parseWavInfo(buf);
+        if (info?.dataChunk) {
+            dataChunks.push(buf.subarray(info.dataChunk.dataOffset, info.dataChunk.dataOffset + info.dataChunk.dataSize));
+        } else if (buf.length > 44) {
+            dataChunks.push(buf.subarray(44));
+        }
+    }
     const combinedData = Buffer.concat(dataChunks);
 
-    // Create a new 44-byte header from the first buffer
-    const header = Buffer.from(first.subarray(0, 44));
-    // Update RIFF chunk size (file size - 8)
-    header.writeUInt32LE(36 + combinedData.length, 4);
-    // Update Subchunk2Size (data size)
-    header.writeUInt32LE(combinedData.length, 40);
+    // Header from first buffer up to data start
+    const header = Buffer.from(first.subarray(0, firstInfo.dataChunk.dataOffset));
+    // Update RIFF chunk size (total file size - 8)
+    header.writeUInt32LE(header.length - 8 + combinedData.length, 4);
+    // Update data subchunk size (Subchunk2Size at dataChunk.headerOffset + 4)
+    header.writeUInt32LE(combinedData.length, firstInfo.dataChunk.headerOffset + 4);
 
     return Buffer.concat([header, combinedData]);
 };
@@ -195,13 +252,18 @@ export const concatWavBuffers = (wavBuffers) => {
  * Helper to calculate estimated audio duration in seconds from 16-bit 24kHz mono WAV PCM.
  *
  * @param {Buffer} audioBuffer
- * @param {number} [sampleRate=24000]
+ * @param {number} [defaultSampleRate=24000]
  * @returns {number}
  */
-export const calculateWavDuration = (audioBuffer, sampleRate = 24000) => {
+export const calculateWavDuration = (audioBuffer, defaultSampleRate = 24000) => {
     if (!Buffer.isBuffer(audioBuffer) || audioBuffer.length <= 44) return 1;
-    const pcmBytes = audioBuffer.length - 44;
-    const bytesPerSecond = sampleRate * 2; // 16-bit mono = 2 bytes per sample
+
+    const info = parseWavInfo(audioBuffer);
+    const pcmBytes = info?.dataChunk ? info.dataChunk.dataSize : audioBuffer.length - 44;
+    const sampleRate = info?.fmtChunk?.sampleRate || defaultSampleRate;
+    const numChannels = info?.fmtChunk?.numChannels || 1;
+    const bytesPerSecond = sampleRate * numChannels * 2; // 16-bit PCM = 2 bytes per sample
+
     const seconds = pcmBytes / bytesPerSecond;
     return Math.max(1, Math.round(seconds * 10) / 10);
 };
@@ -275,10 +337,8 @@ export class SarvamService {
                 input: chunk,
                 target_language_code: targetBcp47,
                 model: model,
+                source_language_code: sourceBcp47,
             };
-            if (sourceBcp47 !== "auto") {
-                body.source_language_code = sourceBcp47;
-            }
 
             let response;
             let attempt = 0;
@@ -286,9 +346,10 @@ export class SarvamService {
 
             while (attempt < maxAttempts) {
                 attempt++;
+                let timer = null;
                 try {
                     const controller = new AbortController();
-                    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+                    timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
                     response = await fetchFn(SARVAM_TRANSLATE_URL, {
                         method: "POST",
@@ -299,8 +360,6 @@ export class SarvamService {
                         body: JSON.stringify(body),
                         signal: controller.signal,
                     });
-
-                    clearTimeout(timer);
 
                     if (response.ok) {
                         const data = await response.json();
@@ -323,6 +382,8 @@ export class SarvamService {
                         throw new ApiError(502, `Sarvam translation request error: ${err.message}`);
                     }
                     await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt - 1)));
+                } finally {
+                    if (timer) clearTimeout(timer);
                 }
             }
         }
@@ -381,9 +442,10 @@ export class SarvamService {
 
             while (attempt < maxAttempts) {
                 attempt++;
+                let timer = null;
                 try {
                     const controller = new AbortController();
-                    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+                    timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
                     response = await fetchFn(SARVAM_TTS_URL, {
                         method: "POST",
@@ -394,8 +456,6 @@ export class SarvamService {
                         body: JSON.stringify(body),
                         signal: controller.signal,
                     });
-
-                    clearTimeout(timer);
 
                     if (response.ok) {
                         const data = await response.json();
@@ -423,6 +483,8 @@ export class SarvamService {
                         throw new ApiError(502, `Sarvam TTS request error: ${err.message}`);
                     }
                     await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt - 1)));
+                } finally {
+                    if (timer) clearTimeout(timer);
                 }
             }
         }

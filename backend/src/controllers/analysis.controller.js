@@ -525,8 +525,20 @@ export const getOrGenerateNoticeAudio = asyncHandler(async (req, res) => {
 
     const languageCode = toTwoLetterLang(requestedLang || doc.primaryExplanation.language || "hi");
 
+    const shouldRefresh = req.query?.refresh === "true" || req.body?.refresh === true;
+
     // Check if audio is already generated for this document in this language
-    if (doc.audioUrl && doc.audioLanguage === languageCode) {
+    if (!shouldRefresh && doc.audioUrl && doc.audioLanguage === languageCode) {
+        let activeAudioUrl = doc.audioUrl;
+        if (isStorageConfigured() && doc.audioS3Key) {
+            try {
+                activeAudioUrl = await getPresignedDownloadUrl(doc.audioS3Key, 86400);
+                doc.audioUrl = activeAudioUrl;
+                await doc.save();
+            } catch {
+                activeAudioUrl = doc.audioUrl;
+            }
+        }
         return res.status(200).json(
             new APIResponse(
                 200,
@@ -534,7 +546,7 @@ export const getOrGenerateNoticeAudio = asyncHandler(async (req, res) => {
                     documentId: doc._id,
                     fileName: doc.fileName,
                     language: languageCode,
-                    audioUrl: doc.audioUrl,
+                    audioUrl: activeAudioUrl,
                     durationSeconds: doc.audioDurationSeconds || 0,
                     voiceName: doc.voiceName || "shubh",
                     isCached: true,

@@ -122,7 +122,15 @@ test("Lok-Setu Sarvam Multilingual & Voice Synthesis Suite", async (t) => {
         assert.equal(merged.readUInt32LE(40), totalPcm);
 
         const duration = calculateWavDuration(merged, 24000);
-        assert.equal(duration, 2);
+                assert.equal(duration, 2);
+        
+                // Verify WAV buffer with extra metadata chunk (e.g. LIST chunk before data)
+                const listHeader = Buffer.from("LIST\x04\x00\x00\x00INFO", "binary");
+                const customWav = Buffer.concat([wav1.subarray(0, 36), listHeader, wav1.subarray(36)]);
+                customWav.writeUInt32LE(customWav.length - 8, 4);
+                const mergedWithMeta = concatWavBuffers([customWav, wav2]);
+                assert.equal(mergedWithMeta.toString("ascii", 0, 4), "RIFF");
+                assert.equal(calculateWavDuration(mergedWithMeta, 24000), 2);
     });
 
     // ─── 4. Sarvam Translation Pipeline ─────────────────────────────────────
@@ -163,6 +171,7 @@ test("Lok-Setu Sarvam Multilingual & Voice Synthesis Suite", async (t) => {
         assert.equal(calledHeaders["api-subscription-key"], "test-sarvam-key-123");
         assert.equal(calledBody.input, "This is a government scheme.");
         assert.equal(calledBody.target_language_code, "hi-IN");
+        assert.equal(calledBody.source_language_code, "en-IN");
         assert.equal(result.translatedText, "यह एक सरकारी योजना है");
     });
 

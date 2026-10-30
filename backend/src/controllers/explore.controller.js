@@ -301,13 +301,15 @@ export const getOrGenerateSchemeAudio = asyncHandler(async (req, res) => {
         throw new ApiError(404, "Scheme or policy document not found.");
     }
 
+    const shouldRefresh = req.query?.refresh === "true" || req.body?.refresh === true;
+
     // 1. Check for existing cached audio explainer for this scheme + language
     const existingExplainer = await Explainer.findOne({
         documentId: id,
         languageCode,
     });
 
-    if (existingExplainer?.audio?.audioUrl) {
+    if (!shouldRefresh && existingExplainer?.audio?.audioUrl) {
         return res.status(200).json(
             new APIResponse(
                 200,
