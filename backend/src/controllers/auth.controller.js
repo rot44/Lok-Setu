@@ -8,9 +8,11 @@ import { APIResponse } from "../utils/apiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { emailQueue, redisConnection } from "../queues/email.queue.js";
 
-const resendClient = process.env.RESEND_API_KEY
-    ? new Resend(process.env.RESEND_API_KEY)
-    : null;
+const getResendClient = () => {
+    return process.env.RESEND_API_KEY
+        ? new Resend(process.env.RESEND_API_KEY)
+        : null;
+};
 
 // Helper: Secure 6-digit numeric OTP generator
 const generateSixDigitOtp = () => {
@@ -20,6 +22,7 @@ const generateSixDigitOtp = () => {
 // Helper: Dispatch OTP via direct Resend API (instant delivery) with BullMQ fallback
 const dispatchOtpEmail = async (email, otp, type = "verification_otp") => {
     // 1. Send directly through Resend API for instant inbox delivery
+    const resendClient = getResendClient();
     if (resendClient) {
         try {
             const subject =
@@ -135,7 +138,9 @@ export const registerUser = asyncHandler(async (req, res) => {
 
     let user;
     if (existingUser && !existingUser.isVerified) {
-        // Update existing unverified user
+        // Update existing unverified user with fresh credentials and OTP
+        existingUser.email = email.toLowerCase();
+        existingUser.username = username.toLowerCase();
         existingUser.password = password; // Will be hashed by pre-save hook
         existingUser.verificationOtp = verificationOtp;
         existingUser.verificationOtpExpiry = verificationOtpExpiry;
@@ -199,7 +204,7 @@ export const registerUser = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const verifyEmailOtp = asyncHandler(async (req, res) => {
-    const { email, otp } = req.body;
+    const { email, otp } = req.body || {};
 
     if (!email || !otp) {
         throw new ApiError(400, "Email and OTP are required.");
@@ -259,7 +264,7 @@ export const verifyEmailOtp = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const resendVerificationOtp = asyncHandler(async (req, res) => {
-    const { email } = req.body;
+    const { email } = req.body || {};
 
     if (!email) {
         throw new ApiError(400, "Email is required.");

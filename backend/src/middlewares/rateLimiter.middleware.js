@@ -27,7 +27,7 @@ export const apiRateLimiter = rateLimit({
  */
 export const authRateLimiter = rateLimit({
     windowMs: 10 * 60 * 1000, // 10 minute window
-    max: 10, // max 10 auth attempts per IP per window
+    max: process.env.NODE_ENV === "production" ? 10 : 100, // generous for local dev/testing, strict 10 in production
     standardHeaders: true,
     legacyHeaders: false,
     handler: (req, res) => {
