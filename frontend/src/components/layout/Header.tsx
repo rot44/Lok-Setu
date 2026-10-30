@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Menu,
   X,
@@ -8,15 +8,33 @@ import {
   MessageSquare,
   Bell,
   Scale,
+  User,
+  LayoutDashboard,
+  LogOut,
+  LogIn,
+  UserPlus,
 } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useAuth } from "@/context/AuthContext";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { cn } from "@/utils/cn";
 
 export const Header: React.FC = () => {
   const { t } = useLanguage();
+  const { user, isAuthenticated, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate("/");
+    } catch {
+      // Ignore logout errors and redirect anyway
+      navigate("/");
+    }
+  };
 
   const navLinks = [
     { to: "/", label: t("nav.home"), icon: Scale },
@@ -54,7 +72,7 @@ export const Header: React.FC = () => {
           </Link>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-1 lg:gap-2" aria-label="Main Navigation">
+          <nav className="hidden lg:flex items-center gap-1 xl:gap-2" aria-label="Main Navigation">
             {navLinks.map((link) => {
               const Icon = link.icon;
               const isActive =
@@ -80,9 +98,68 @@ export const Header: React.FC = () => {
             })}
           </nav>
 
-          {/* Desktop Right Actions: Language Switcher */}
-          <div className="hidden md:flex items-center gap-3">
+          {/* Desktop Right Actions: Language Switcher + Auth Controls */}
+          <div className="hidden md:flex items-center gap-2 lg:gap-3">
             <LanguageSwitcher />
+
+            {isAuthenticated ? (
+              <div className="flex items-center gap-2 pl-2 border-l border-paper-border">
+                <Link
+                  to="/dashboard"
+                  className={cn(
+                    "flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-semibold transition-colors",
+                    location.pathname === "/dashboard"
+                      ? "bg-neel text-white shadow-xs"
+                      : "text-neel hover:bg-paper hover:text-neel-dark"
+                  )}
+                  title={t("nav.dashboard", "Citizen Desk")}
+                >
+                  <LayoutDashboard className="h-3.5 w-3.5" />
+                  <span>{t("nav.dashboard", "Desk")}</span>
+                </Link>
+
+                <Link
+                  to="/profile"
+                  className={cn(
+                    "flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-semibold transition-colors",
+                    location.pathname === "/profile"
+                      ? "bg-neel text-white shadow-xs"
+                      : "text-neel hover:bg-paper hover:text-neel-dark"
+                  )}
+                  title={t("nav.profile", "Citizen Profile")}
+                >
+                  <User className="h-3.5 w-3.5" />
+                  <span className="max-w-[100px] truncate">{user?.username || t("nav.profile", "Profile")}</span>
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="p-1.5 text-neel-muted hover:text-vermilion hover:bg-vermilion/10 rounded transition-colors"
+                  title={t("nav.logout", "Sign Out")}
+                  aria-label={t("nav.logout", "Sign Out")}
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 pl-2 border-l border-paper-border">
+                <Link
+                  to="/login"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-neel/20 text-xs font-semibold text-neel hover:bg-paper transition-colors"
+                >
+                  <LogIn className="h-3.5 w-3.5" />
+                  <span>{t("nav.signIn", "Sign In")}</span>
+                </Link>
+                <Link
+                  to="/register"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-vermilion text-white text-xs font-semibold hover:bg-vermilion-dark transition-colors shadow-xs"
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  <span>{t("nav.register", "Register")}</span>
+                </Link>
+              </div>
+            )}
           </div>
 
           {/* Mobile Menu & Language Toggle */}
@@ -132,6 +209,63 @@ export const Header: React.FC = () => {
                 </NavLink>
               );
             })}
+
+            {/* Mobile Auth Drawer Section */}
+            <div className="pt-3 mt-3 border-t border-paper-border">
+              {isAuthenticated ? (
+                <div className="space-y-1">
+                  <div className="px-3 py-1.5 text-xs text-neel-muted font-mono">
+                    Citizen: <span className="font-semibold text-neel">{user?.username}</span>
+                  </div>
+                  <Link
+                    to="/dashboard"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded text-sm font-semibold text-neel hover:bg-paper"
+                  >
+                    <LayoutDashboard className="h-5 w-5 shrink-0 text-neel-light" />
+                    <span>{t("nav.dashboard", "Citizen Desk")}</span>
+                  </Link>
+                  <Link
+                    to="/profile"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded text-sm font-semibold text-neel hover:bg-paper"
+                  >
+                    <User className="h-5 w-5 shrink-0 text-neel-light" />
+                    <span>{t("nav.profile", "Citizen Profile")}</span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      handleLogout();
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded text-sm font-semibold text-vermilion hover:bg-vermilion/10 text-left"
+                  >
+                    <LogOut className="h-5 w-5 shrink-0" />
+                    <span>{t("nav.logout", "Sign Out")}</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <Link
+                    to="/login"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center justify-center gap-2 px-3 py-2.5 rounded border border-neel/20 text-sm font-semibold text-neel hover:bg-paper text-center"
+                  >
+                    <LogIn className="h-4 w-4" />
+                    <span>{t("nav.signIn", "Sign In")}</span>
+                  </Link>
+                  <Link
+                    to="/register"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex items-center justify-center gap-2 px-3 py-2.5 rounded bg-vermilion text-white text-sm font-semibold hover:bg-vermilion-dark text-center shadow-xs"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                    <span>{t("nav.register", "Register")}</span>
+                  </Link>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
