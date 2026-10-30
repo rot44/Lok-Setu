@@ -6,7 +6,7 @@ import { UserProfile } from "../models/userProfile.model.js";
 import { ApiError } from "../utils/apiError.js";
 import { APIResponse } from "../utils/apiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { emailQueue } from "../queues/email.queue.js";
+import { emailQueue, redisConnection } from "../queues/email.queue.js";
 
 const resendClient = process.env.RESEND_API_KEY
     ? new Resend(process.env.RESEND_API_KEY)
@@ -19,40 +19,54 @@ const generateSixDigitOtp = () => {
 
 // Helper: Dispatch OTP via BullMQ or directly via Resend if Redis is offline
 const dispatchOtpEmail = async (email, otp, type = "verification_otp") => {
-    try {
-        await emailQueue.add("send-verification-otp", {
-            email,
-            type,
-            data: { otp },
-        });
-    } catch (queueErr) {
-        // Fallback: Send directly via Resend if Redis is offline
-        if (resendClient) {
-            try {
-                await resendClient.emails.send({
-                    from: process.env.RESEND_FROM_EMAIL || "Lok Setu <onboarding@resend.dev>",
-                    to: email,
-                    subject:
-                        type === "verification_otp"
-                            ? "Verify your Lok Setu Account"
-                            : "Reset Your Lok Setu Password",
-                    html: `
-                        <div style="font-family:Arial,sans-serif;max-width:500px;margin:auto;padding:30px;border:1px solid #e5e7eb;border-radius:12px;color:#1f2937;">
-                            <h2 style="color:#2563eb;margin-bottom:8px;">🏛️ Lok Setu Security Verification</h2>
-                            <p style="color:#6b7280;margin-bottom:24px;">Apna account verify karne ke liye neeche diya gaya OTP darj karein:</p>
-                            <div style="background:#eff6ff;padding:20px;border-radius:8px;text-align:center;font-size:32px;font-weight:bold;letter-spacing:8px;color:#1d4ed8;">
-                                ${otp}
-                            </div>
-                            <p style="color:#9ca3af;font-size:13px;margin-top:20px;">
-                                ⏳ Yeh OTP sirf <strong>10 minute</strong> tak valid hai.
-                            </p>
+    // 1. If Redis is online and ready, queue the email via BullMQ
+    if (redisConnection && redisConnection.status === "ready") {
+        try {
+            await emailQueue.add("send-verification-otp", {
+                email,
+                type,
+                data: { otp },
+            });
+            return;
+        } catch (queueErr) {
+            console.warn("⚠️ [Queue Notice] Redis is offline. Falling back to direct email.");
+        }
+    }
+
+    // 2. Direct Resend fallback (guarantees delivery even if local Redis is down)
+    if (resendClient) {
+        try {
+            const subject =
+                type === "verification_otp"
+                    ? "Verify your Lok Setu Account"
+                    : "Reset Your Lok Setu Password";
+
+            const { data, error } = await resendClient.emails.send({
+                from: process.env.RESEND_FROM_EMAIL || "Lok Setu <onboarding@resend.dev>",
+                to: email,
+                subject,
+                html: `
+                    <div style="font-family:Arial,sans-serif;max-width:500px;margin:auto;padding:30px;border:1px solid #e5e7eb;border-radius:12px;color:#1f2937;">
+                        <h2 style="color:#2563eb;margin-bottom:8px;">🏛️ Lok Setu Security Verification</h2>
+                        <p style="color:#6b7280;margin-bottom:24px;">Apna account verify karne ke liye neeche diya gaya OTP darj karein:</p>
+                        <div style="background:#eff6ff;padding:20px;border-radius:8px;text-align:center;font-size:32px;font-weight:bold;letter-spacing:8px;color:#1d4ed8;">
+                            ${otp}
                         </div>
-                    `,
-                });
-                console.log(`✅ [Direct Resend] Sent OTP email directly to ${email}`);
-            } catch (resendErr) {
-                console.error("❌ [Direct Resend Failed]:", resendErr.message);
+                        <p style="color:#9ca3af;font-size:13px;margin-top:20px;">
+                            ⏳ Yeh OTP sirf <strong>10 minute</strong> tak valid hai.<br/>
+                            Agar aapne yeh request nahi ki toh is email ko ignore karein.
+                        </p>
+                    </div>
+                `,
+            });
+
+            if (error) {
+                console.error("❌ [Resend Error]:", error);
+            } else {
+                console.log(`✅ [Direct Resend] Sent OTP email to ${email} (ID: ${data?.id})`);
             }
+        } catch (resendErr) {
+            console.error("❌ [Direct Resend Exception]:", resendErr.message);
         }
     }
 };
