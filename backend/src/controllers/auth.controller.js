@@ -47,7 +47,7 @@ const cookieOptions = {
  * @access  Public
  */
 export const registerUser = asyncHandler(async (req, res) => {
-    const { username, email, password, phone, role, preferredLanguage, state, city } = req.body;
+    const { username, email, password, phone, role, preferredLanguage, state, city } = req.body || {};
 
     // 1. Mandatory validations
     if (!username || !email || !password) {
@@ -257,7 +257,7 @@ export const resendVerificationOtp = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const loginUser = asyncHandler(async (req, res) => {
-    const { email, username, password } = req.body;
+    const { email, username, password } = req.body || {};
 
     if ((!email && !username) || !password) {
         throw new ApiError(400, "Email or Username and Password are required.");
