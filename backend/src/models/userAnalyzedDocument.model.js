@@ -19,6 +19,16 @@ const userAnalyzedDocumentSchema = new mongoose.Schema(
     s3Key: {
       type: String,
     },
+    fileHash: {
+      type: String, // SHA-256 for deduplication
+      index: true,
+    },
+    status: {
+      type: String,
+      enum: ["uploaded", "processing", "analyzed", "failed"],
+      default: "uploaded",
+      index: true,
+    },
     fileType: {
       type: String,
       enum: ["pdf", "docx", "image"],
