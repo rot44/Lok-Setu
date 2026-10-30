@@ -84,6 +84,7 @@ const handleGeminiError = (error, operationName = "AI generation") => {
  * @param {string} [options.model] - Specific model override (defaults to config.ai.model)
  * @param {number} [options.temperature] - Generation temperature (default: 0.2 for strict grounding)
  * @param {number} [options.maxOutputTokens] - Token limit
+ * @param {Object} [options.clientOverride] - Optional client override for testing
  * @returns {Promise<string>} Generated text
  */
 export const generateGroundedText = async ({
@@ -92,8 +93,9 @@ export const generateGroundedText = async ({
     model = config.ai.model,
     temperature = 0.2,
     maxOutputTokens = 4096,
+    clientOverride = null,
 }) => {
-    const client = getGeminiClient();
+    const client = clientOverride || getGeminiClient();
 
     try {
         const combinedSystemInstruction = systemInstruction
@@ -129,6 +131,7 @@ export const generateGroundedText = async ({
  * @param {Object} [options.responseSchema] - Optional JSON Schema definition
  * @param {string} [options.systemInstruction] - Additional system instructions
  * @param {string} [options.model] - Model name override
+ * @param {Object} [options.clientOverride] - Optional client override for testing
  * @returns {Promise<Object>} Parsed JSON response
  */
 export const generateStructuredJson = async ({
@@ -136,8 +139,9 @@ export const generateStructuredJson = async ({
     responseSchema,
     systemInstruction,
     model = config.ai.model,
+    clientOverride = null,
 }) => {
-    const client = getGeminiClient();
+    const client = clientOverride || getGeminiClient();
 
     try {
         const combinedSystemInstruction = systemInstruction
@@ -167,7 +171,7 @@ export const generateStructuredJson = async ({
 
         try {
             return JSON.parse(rawText);
-        } catch (parseError) {
+        } catch (_parseError) {
             throw new ApiError(500, "Gemini output could not be parsed as valid JSON.");
         }
     } catch (error) {
@@ -182,13 +186,15 @@ export const generateStructuredJson = async ({
  * @param {Object} options
  * @param {string} options.text - Input text to embed
  * @param {string} [options.model] - Embedding model (defaults to config.ai.embeddingModel)
+ * @param {Object} [options.clientOverride] - Optional client override for testing
  * @returns {Promise<number[]>} Array of floating-point embedding coordinates
  */
 export const generateEmbedding = async ({
     text,
     model = config.ai.embeddingModel,
+    clientOverride = null,
 }) => {
-    const client = getGeminiClient();
+    const client = clientOverride || getGeminiClient();
 
     if (!text || typeof text !== "string" || !text.trim()) {
         throw new ApiError(400, "Valid non-empty text string is required for embedding generation.");

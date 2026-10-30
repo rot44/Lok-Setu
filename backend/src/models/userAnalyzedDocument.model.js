@@ -25,14 +25,24 @@ const userAnalyzedDocumentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["uploaded", "processing", "analyzed", "failed"],
+      enum: ["uploaded", "processing", "analyzed", "failed", "requires_ocr"],
       default: "uploaded",
       index: true,
     },
     fileType: {
       type: String,
-      enum: ["pdf", "docx", "image"],
+      enum: ["pdf", "docx", "image", "text"],
       required: true,
+    },
+    requiresOcr: {
+      type: Boolean,
+      default: false,
+    },
+    ocrNotice: {
+      type: String,
+    },
+    analysisError: {
+      type: String,
     },
     rawExtractedText: {
       type: String,
@@ -47,10 +57,17 @@ const userAnalyzedDocumentSchema = new mongoose.Schema(
       summary: {
         type: String,
       },
-      keyRights: [String],
-      citizenImpact: [String],
-      businessImpact: [String],
+      noticeFacts: [String],
+      datesAndDeadlines: [String],
       actionItems: [String],
+      penalties: [String],
+      keyRights: [String],
+      citizenImpact: mongoose.Schema.Types.Mixed,
+      businessImpact: mongoose.Schema.Types.Mixed,
+      missingInformation: [String],
+      citations: [mongoose.Schema.Types.Mixed],
+      disclaimer: String,
+      requiresOcr: Boolean,
     },
 
     // Alternative language breakdowns (e.g. English, Marathi, Tamil)
@@ -59,8 +76,11 @@ const userAnalyzedDocumentSchema = new mongoose.Schema(
         language: String,
         summary: String,
         keyRights: [String],
-        citizenImpact: [String],
-        businessImpact: [String],
+        citizenImpact: mongoose.Schema.Types.Mixed,
+        businessImpact: mongoose.Schema.Types.Mixed,
+        actionItems: [String],
+        penalties: [String],
+        citations: [mongoose.Schema.Types.Mixed],
       },
     ],
 
@@ -82,4 +102,3 @@ export const UserAnalyzedDocument = mongoose.model(
   "UserAnalyzedDocument",
   userAnalyzedDocumentSchema
 );
-

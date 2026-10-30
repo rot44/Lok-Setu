@@ -6,18 +6,19 @@ const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
     const allowedMimeTypes = [
-        "application/pdf",                                                                    // PDF
+        "application/pdf",                                                         // PDF
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // DOCX
-        "application/msword",                                                                 // DOC
-        "image/jpeg",                                                                         // JPG
-        "image/png",                                                                          // PNG
-        "image/webp",                                                                         // WEBP
+        "application/msword",                                                      // DOC
+        "image/jpeg",                                                              // JPG
+        "image/png",                                                               // PNG
+        "image/webp",                                                              // WEBP
+        "text/plain",                                                              // TXT
     ];
 
     if (allowedMimeTypes.includes(file.mimetype)) {
         cb(null, true);
     } else {
-        cb(new Error("Invalid file type. Only PDF, DOCX, JPG, PNG, and WEBP files are allowed."), false);
+        cb(new Error("Invalid file type. Only PDF, DOCX, JPG, PNG, WEBP, and TXT files are allowed."), false);
     }
 };
 
@@ -28,4 +29,3 @@ export const upload = multer({
         fileSize: 10 * 1024 * 1024, // Max 10MB per file
     },
 });
-

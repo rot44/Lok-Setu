@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "lint": "eslint src --ext ts,tsx",
-    "test": "node --experimental-strip-types --test test/auth.test.js test/scheme.test.js test/assistant.test.js",
+    "test": "node --experimental-strip-types --test test/auth.test.js test/scheme.test.js test/assistant.test.js test/notice-analysis.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

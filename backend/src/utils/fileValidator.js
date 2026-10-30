@@ -4,7 +4,7 @@ import crypto from "node:crypto";
  * Validates actual binary signatures (magic bytes) of uploaded files
  * Ensures users cannot disguise malicious executables as .pdf or .png
  * @param {Buffer} buffer - File memory buffer
- * @returns {"pdf" | "docx" | "image" | null}
+ * @returns {"pdf" | "docx" | "image" | "text" | null}
  */
 export const detectFileTypeFromMagicBytes = (buffer) => {
     if (!buffer || buffer.length < 4) return null;
@@ -24,9 +24,31 @@ export const detectFileTypeFromMagicBytes = (buffer) => {
         return "image";
     }
 
+    // WEBP: RIFF....WEBP
+    if (
+        buffer.length >= 12 &&
+        buffer.toString("ascii", 0, 4) === "RIFF" &&
+        buffer.toString("ascii", 8, 12) === "WEBP"
+    ) {
+        return "image";
+    }
+
     // DOCX / Office Open XML (ZIP format): PK.. (hex: 50 4B 03 04)
     if (buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x03 && buffer[3] === 0x04) {
         return "docx";
+    }
+
+    // Check for plain text (no null bytes in sample)
+    const checkLen = Math.min(buffer.length, 1024);
+    let hasNull = false;
+    for (let i = 0; i < checkLen; i++) {
+        if (buffer[i] === 0x00) {
+            hasNull = true;
+            break;
+        }
+    }
+    if (!hasNull) {
+        return "text";
     }
 
     return null;
@@ -40,4 +62,3 @@ export const detectFileTypeFromMagicBytes = (buffer) => {
 export const computeFileSha256 = (buffer) => {
     return crypto.createHash("sha256").update(buffer).digest("hex");
 };
-

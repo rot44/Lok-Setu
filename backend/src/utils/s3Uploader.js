@@ -108,4 +108,44 @@ export const getPresignedDownloadUrl = async (s3Key, expiresInSeconds = 86400) =
     }
 };
 
+/**
+ * Download a file buffer directly from Amazon S3
+ * @param {string} s3Key - Destination path inside S3 bucket
+ * @returns {Promise<Buffer>}
+ */
+export const downloadFileBufferFromS3 = async (s3Key) => {
+    if (!s3Key || typeof s3Key !== "string") {
+        throw new ApiError(400, "Valid S3 key is required to download document.");
+    }
+
+    const s3 = getS3Client();
+
+    try {
+        const command = new GetObjectCommand({
+            Bucket: config.storage.bucketName,
+            Key: s3Key,
+        });
+
+        const response = await s3.send(command);
+        if (!response.Body) {
+            throw new ApiError(404, "S3 object is empty or could not be retrieved.");
+        }
+
+        if (typeof response.Body.transformToByteArray === "function") {
+            const bytes = await response.Body.transformToByteArray();
+            return Buffer.from(bytes);
+        }
+
+        return await new Promise((resolve, reject) => {
+            const chunks = [];
+            response.Body.on("data", (chunk) => chunks.push(chunk));
+            response.Body.on("error", reject);
+            response.Body.on("end", () => resolve(Buffer.concat(chunks)));
+        });
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(500, `Failed to download file from S3: ${error.message}`);
+    }
+};
+
 export { isStorageConfigured };

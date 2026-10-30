@@ -1,12 +1,15 @@
 import crypto from "node:crypto";
+import mongoose from "mongoose";
 import { UserProfile } from "../models/userProfile.model.js";
 import { AiChatSession } from "../models/aiChatSession.model.js";
 import { UserAnalyzedDocument } from "../models/userAnalyzedDocument.model.js";
 import { ApiError } from "../utils/apiError.js";
 import { APIResponse } from "../utils/apiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { uploadUserNoticeToS3 } from "../utils/s3Uploader.js";
+import { uploadUserNoticeToS3, downloadFileBufferFromS3 } from "../utils/s3Uploader.js";
 import { detectFileTypeFromMagicBytes, computeFileSha256 } from "../utils/fileValidator.js";
+import { noticeAnalysisService } from "../services/noticeAnalysis.service.js";
+import { validateLanguage } from "../services/civicAnalysis.service.js";
 
 // Regional greeting templates based on citizen's primary language
 const WELCOME_MESSAGES = {
@@ -21,13 +24,26 @@ const WELCOME_MESSAGES = {
 };
 
 /**
+ * Safely fetches citizen profile without Mongoose buffering timeouts when offline or in tests.
+ */
+const safeFindProfile = async (req) => {
+    if (req.userProfile !== undefined) {
+        return req.userProfile;
+    }
+    if (mongoose.connection && mongoose.connection.readyState === 1) {
+        return await UserProfile.findOne({ user: req.user._id }).catch(() => null);
+    }
+    return null;
+};
+
+/**
  * @desc    Initiate "Analyze Document" session (Prepares pre-prompt & user profile context for AI)
  * @route   POST /api/v1/analyze/init-session
  * @access  Private (Requires verifyJWT)
  */
 export const initAnalyzeSession = asyncHandler(async (req, res) => {
-    // 1. Fetch citizen's profile
-    const profile = await UserProfile.findOne({ user: req.user._id });
+    // 1. Fetch citizen's profile safely
+    const profile = await safeFindProfile(req);
 
     // 2. Build structured user context payload from profile
     const primaryLang = profile?.preferredLanguages?.primary || "hi";
@@ -107,14 +123,14 @@ REQUIRED OUTPUT STRUCTURE:
 });
 
 /**
- * @desc    Upload document (PDF/DOCX/Image) to Amazon S3 & save metadata (Pre-AI Stage)
+ * @desc    Upload document (PDF/DOCX/Image/Text) to Amazon S3 & save metadata
  * @route   POST /api/v1/analyze/upload
  * @access  Private (Requires verifyJWT)
  */
 export const uploadDocumentForAnalysis = asyncHandler(async (req, res) => {
     // 1. File existence check
     if (!req.file || !req.file.buffer) {
-        throw new ApiError(400, "Please select and upload a valid file (PDF, DOCX, or Image).");
+        throw new ApiError(400, "Please select and upload a valid file (PDF, DOCX, Image, or Text).");
     }
 
     const { sessionId } = req.body;
@@ -122,12 +138,12 @@ export const uploadDocumentForAnalysis = asyncHandler(async (req, res) => {
     const originalFileName = req.file.originalname;
     const mimeType = req.file.mimetype;
 
-    // 2. Security: Validate Magic Bytes (Ensures real file format, rejects disguised executables)
+    // 2. Security: Validate Magic Bytes
     const detectedType = detectFileTypeFromMagicBytes(fileBuffer);
     if (!detectedType) {
         throw new ApiError(
             400,
-            "Invalid file content. Only authentic PDF, DOCX, JPG, and PNG files are accepted."
+            "Invalid file content. Only authentic PDF, DOCX, JPG, PNG, WEBP, and TXT files are accepted."
         );
     }
 
@@ -167,7 +183,7 @@ export const uploadDocumentForAnalysis = asyncHandler(async (req, res) => {
         mimeType
     );
 
-    // 6. Save metadata record to MongoDB (Status: "uploaded", waiting for AI pipeline)
+    // 6. Save metadata record to MongoDB (Status: "uploaded")
     const analyzedDoc = await UserAnalyzedDocument.create({
         user: req.user._id,
         fileName: originalFileName,
@@ -200,7 +216,7 @@ export const uploadDocumentForAnalysis = asyncHandler(async (req, res) => {
         );
     }
 
-    // 8. Return response ready for friend's AI Agent pipeline to consume
+    // 8. Return response ready for analysis execution
     return res.status(201).json(
         new APIResponse(
             201,
@@ -220,13 +236,233 @@ export const uploadDocumentForAnalysis = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Execute grounded notice analysis and structured rights extraction
+ * @route   POST /api/v1/analyze/:id/execute
+ * @access  Private (Requires verifyJWT)
+ */
+export const executeDocumentAnalysis = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { language: requestedLanguage } = req.body || {};
+
+    // 1. Validate ID format
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        throw new ApiError(400, "Invalid document ID format.");
+    }
+
+    // 2. Fetch document & enforce strict ownership
+    const doc = await UserAnalyzedDocument.findById(id);
+    if (!doc) {
+        throw new ApiError(404, "Document not found.");
+    }
+
+    if (doc.user.toString() !== req.user._id.toString()) {
+        throw new ApiError(403, "Access denied. You do not own this document.");
+    }
+
+    // 3. Resolve target language safely
+    let targetLanguage = "en";
+    if (requestedLanguage) {
+        targetLanguage = validateLanguage(requestedLanguage);
+    } else {
+        const profile = await safeFindProfile(req);
+        targetLanguage = profile?.preferredLanguages?.primary || "hi";
+    }
+
+    // 4. Idempotency Check: Already analyzed?
+    if (doc.status === "analyzed" && doc.primaryExplanation?.summary) {
+        return res.status(200).json(
+            new APIResponse(
+                200,
+                {
+                    documentId: doc._id,
+                    fileName: doc.fileName,
+                    fileUrl: doc.fileUrl,
+                    status: doc.status,
+                    isCached: true,
+                    analysis: doc.primaryExplanation,
+                    rawExtractedText: doc.rawExtractedText,
+                    audioUrl: doc.audioUrl,
+                },
+                "Document was already analyzed previously! Retrieved from cache."
+            )
+        );
+    }
+
+    // 5. Already determined as requiring OCR?
+    if (doc.status === "requires_ocr") {
+        return res.status(200).json(
+            new APIResponse(
+                200,
+                {
+                    documentId: doc._id,
+                    fileName: doc.fileName,
+                    status: "requires_ocr",
+                    requiresOcr: true,
+                    message:
+                        doc.ocrNotice ||
+                        doc.primaryExplanation?.summary ||
+                        "This document requires OCR processing. Scanned document or photograph detected without readable digital text.",
+                },
+                "Document requires OCR processing."
+            )
+        );
+    }
+
+    // 6. Concurrency Guard: Atomically lock state to "processing"
+    const lockedDoc = await UserAnalyzedDocument.findOneAndUpdate(
+        {
+            _id: id,
+            user: req.user._id,
+            status: { $in: ["uploaded", "failed"] },
+        },
+        {
+            $set: { status: "processing" },
+        },
+        { new: true }
+    );
+
+    if (!lockedDoc) {
+        const currentDoc = await UserAnalyzedDocument.findById(id);
+        if (currentDoc?.status === "processing") {
+            throw new ApiError(409, "Document analysis is already in progress. Please wait.");
+        }
+        if (currentDoc?.status === "analyzed") {
+            return res.status(200).json(
+                new APIResponse(
+                    200,
+                    {
+                        documentId: currentDoc._id,
+                        fileName: currentDoc.fileName,
+                        status: currentDoc.status,
+                        isCached: true,
+                        analysis: currentDoc.primaryExplanation,
+                    },
+                    "Document analysis completed."
+                )
+            );
+        }
+        if (currentDoc?.status === "requires_ocr") {
+            return res.status(200).json(
+                new APIResponse(
+                    200,
+                    {
+                        documentId: currentDoc._id,
+                        fileName: currentDoc.fileName,
+                        status: "requires_ocr",
+                        requiresOcr: true,
+                        message: currentDoc.ocrNotice || "Document requires OCR processing.",
+                    },
+                    "Document requires OCR processing."
+                )
+            );
+        }
+    }
+
+    try {
+        // 7. Retrieve file buffer: support test override or download from S3
+        let fileBuffer = req.fileBuffer || null;
+        if (!fileBuffer && doc.s3Key) {
+            fileBuffer = await downloadFileBufferFromS3(doc.s3Key);
+        }
+
+        if (!fileBuffer) {
+            throw new ApiError(404, "Uploaded document file could not be found in storage.");
+        }
+
+        // 8. Fetch user demographic profile safely
+        const profile = await safeFindProfile(req);
+
+        // 9. Execute notice analysis
+        const result = await noticeAnalysisService.analyzeNoticeDocument({
+            doc,
+            buffer: fileBuffer,
+            language: targetLanguage,
+            userProfile: profile,
+            options: req.analysisOptions || {},
+        });
+
+        // 10. Persist outcome
+        if (result.status === "requires_ocr") {
+            doc.status = "requires_ocr";
+            doc.requiresOcr = true;
+            doc.ocrNotice = result.message;
+            doc.primaryExplanation = {
+                language: targetLanguage,
+                summary: result.message,
+                noticeFacts: [],
+                datesAndDeadlines: [],
+                actionItems: [],
+                penalties: [],
+                keyRights: [],
+                citizenImpact: "",
+                businessImpact: "",
+                missingInformation: [],
+                citations: [],
+                disclaimer: "",
+                requiresOcr: true,
+            };
+            await doc.save();
+
+            return res.status(200).json(
+                new APIResponse(
+                    200,
+                    {
+                        documentId: doc._id,
+                        fileName: doc.fileName,
+                        status: "requires_ocr",
+                        requiresOcr: true,
+                        message: result.message,
+                    },
+                    "Document requires OCR processing."
+                )
+            );
+        }
+
+        // Successful analysis
+        doc.status = "analyzed";
+        doc.rawExtractedText = result.rawExtractedText;
+        doc.primaryExplanation = result.analysis;
+        doc.requiresOcr = false;
+        doc.analysisError = null;
+        await doc.save();
+
+        return res.status(200).json(
+            new APIResponse(
+                200,
+                {
+                    documentId: doc._id,
+                    fileName: doc.fileName,
+                    fileUrl: doc.fileUrl,
+                    status: doc.status,
+                    isCached: false,
+                    analysis: doc.primaryExplanation,
+                    rawExtractedText: doc.rawExtractedText,
+                },
+                "Document analyzed successfully."
+            )
+        );
+    } catch (err) {
+        // Rollback status from "processing" to "failed" so document is not left permanently locked
+        await UserAnalyzedDocument.findByIdAndUpdate(id, {
+            $set: {
+                status: "failed",
+                analysisError: err.message || "Document analysis failed.",
+            },
+        });
+        throw err;
+    }
+});
+
+/**
  * @desc    Get user's uploaded documents history (For Dashboard / Revisit)
  * @route   GET /api/v1/analyze/history
  * @access  Private (Requires verifyJWT)
  */
 export const getUserAnalysisHistory = asyncHandler(async (req, res) => {
     const history = await UserAnalyzedDocument.find({ user: req.user._id })
-        .select("fileName fileUrl fileType status primaryExplanation.language primaryExplanation.summary audioUrl createdAt")
+        .select(
+            "fileName fileUrl fileType status primaryExplanation.language primaryExplanation.summary requiresOcr audioUrl createdAt"
+        )
         .sort({ createdAt: -1 });
 
     return res.status(200).json(
@@ -242,6 +478,10 @@ export const getUserAnalysisHistory = asyncHandler(async (req, res) => {
 export const getAnalyzedDocumentById = asyncHandler(async (req, res) => {
     const { id } = req.params;
 
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        throw new ApiError(400, "Invalid document ID format.");
+    }
+
     const doc = await UserAnalyzedDocument.findOne({
         _id: id,
         user: req.user._id, // Ownership guard
@@ -255,4 +495,3 @@ export const getAnalyzedDocumentById = asyncHandler(async (req, res) => {
         new APIResponse(200, doc, "Document details retrieved successfully.")
     );
 });
-
