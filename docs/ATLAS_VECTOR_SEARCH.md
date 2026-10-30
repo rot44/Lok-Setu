@@ -1,6 +1,6 @@
-# Lok-Setu: MongoDB Atlas Vector Search Index Configuration
+# Lok-Setu: MongoDB Atlas Vector Search & Hybrid Retrieval Configuration
 
-This document specifies the exact Search Index configuration required for semantic document retrieval on the `documentchunks` collection in MongoDB Atlas.
+This document specifies the Search Index configuration, query pipeline, and local fallback behavior for Lok-Setu's Hybrid Retrieval and Evidence Assembly system.
 
 ---
 
@@ -50,6 +50,10 @@ When configuring the Vector Search index in the MongoDB Atlas Console:
     },
     {
       "type": "filter",
+      "path": "metadata.issuingAuthority"
+    },
+    {
+      "type": "filter",
       "path": "indexingStatus"
     },
     {
@@ -64,8 +68,57 @@ When configuring the Vector Search index in the MongoDB Atlas Console:
 
 ---
 
-## 3. Local Development & Testing Notice
+## 3. How to Verify Atlas Index Status
 
-- **Local Standalone MongoDB:** Standard local MongoDB instances (such as a local Docker or standalone Community Server) do not natively run the proprietary Atlas Search `$vectorSearch` engine.
-- **Local Fallback:** In local environments without Atlas Search, Lok-Setu's `DocumentChunk` model maintains full MongoDB text search indexes (`content: "text", "metadata.title": "text"`) and exact vector cosine calculations for development and integration verification.
-- **Verification Guarantee:** In accordance with Lok-Setu engineering standards, the application does not assume or falsely assert that Atlas Vector Search is operational without verifying cluster connectivity.
+1. **Atlas Web Console:**
+   - In Atlas -> **Atlas Search**, locate `vector_index` on `lokSetu.documentchunks`.
+   - Verify that status is **Active** (and initial sync is complete).
+2. **Programmatic Verification:**
+   - When executing `retrieveEvidence(query, { mode: "semantic" })`, if Atlas Vector Search is active, the returned evidence items will report `retrieval.retrievedVia: "atlas"`.
+   - If the index is missing or building, or if running against local MongoDB, the retrieval layer automatically falls back to local in-memory cosine similarity and reports `retrieval.retrievedVia: "local_fallback"`.
+
+---
+
+## 4. Hybrid Retrieval Architecture (Commit 6)
+
+### 4.1 Two-Stream Retrieval
+1. **Semantic Vector Retrieval:**
+   - Queries `embedding.values` using `$vectorSearch` with cosine similarity.
+   - Enforces `indexingStatus: "indexed"` and applies regional/type metadata filters.
+   - Returns candidates with vector similarity scores.
+2. **Keyword Text Retrieval:**
+   - Queries the compound text index on `{ content: "text", "metadata.title": "text" }`.
+   - Handles stopword-only queries and empty terms safely without throwing.
+   - Returns candidates with MongoDB `textScore`.
+
+### 4.2 Reciprocal Rank Fusion (RRF)
+Semantic and keyword results are combined using the standard RRF formula:
+
+$$\text{RRF score} = \sum_{m \in \{\text{semantic}, \text{keyword}\}} \frac{1}{k + \text{rank}_m}$$
+
+- Default smoothing constant: $k = 60$.
+- Rank is 1-based ($\text{rank} = 1$ for top result).
+- If a chunk appears in only one stream, the missing term is $0$.
+- Preserves raw vector similarity and text scores for debugging.
+- **Deterministic Tie-Breaking:**
+  1. $\text{RRF score}$ descending
+  2. $\text{Semantic score}$ descending
+  3. $\text{Keyword score}$ descending
+  4. $\text{chunkId}$ string ascending (alphabetical order)
+
+### 4.3 Metadata Filtering
+The following filters are normalized consistently across Atlas and local queries:
+- `jurisdictionLevel`: `"central"`, `"state"`, or `"municipal"`
+- `applicableState`: `"ALL"` or specific Indian state (supports arrays with `$in`)
+- `documentType`: e.g. `"welfare_policy"`, `"government_notification"`
+- `issuingAuthority`: exact issuing department / ministry
+- `documentId`: target document ID / ObjectId
+
+---
+
+## 5. Local Development & Standalone Fallback Notice
+
+- **Local Standalone MongoDB:** Standard local MongoDB instances (such as local Community Server or Docker) do not natively run the Atlas Search engine (`$vectorSearch`).
+- **Local Fallback:** In local environments without Atlas Search, `retrieval.service.js` automatically calculates exact in-memory cosine similarity:
+  $$\text{cosineSimilarity}(A, B) = \frac{A \cdot B}{\|A\| \times \|B\|}$$
+- **Verification Guarantee:** In accordance with Lok-Setu engineering standards, the application does not assume or falsely assert that Atlas Vector Search is operational without verifying cluster connectivity. Unconfigured Atlas environments smoothly transition to local calculation without losing evidence provenance.

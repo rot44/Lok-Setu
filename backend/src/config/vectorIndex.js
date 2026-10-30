@@ -37,6 +37,10 @@ export const ATLAS_VECTOR_INDEX_DEFINITION = {
             },
             {
                 type: "filter",
+                path: "metadata.issuingAuthority",
+            },
+            {
+                type: "filter",
                 path: "indexingStatus",
             },
             {
