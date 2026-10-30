@@ -1,6 +1,33 @@
 import mongoose from "mongoose";
 import { CHAT_SESSION_MODES } from "../constants.js";
 
+const citationSchema = new mongoose.Schema(
+  {
+    chunkId: { type: String, required: true },
+    documentId: { type: String, default: "" },
+    title: { type: String, default: "" },
+    issuingAuthority: { type: String, default: null },
+    sectionHeading: { type: String, default: null },
+    clauseNumber: { type: String, default: null },
+    startOffset: { type: Number, default: 0 },
+    endOffset: { type: Number, default: 0 },
+    sourceUrl: { type: String, default: null },
+  },
+  { _id: false }
+);
+
+const groundedAnalysisSchema = new mongoose.Schema(
+  {
+    summary: { type: String, default: "" },
+    sourceFacts: [{ type: String }],
+    interpretation: { type: String, default: "" },
+    limitations: [{ type: String }],
+    citations: [citationSchema],
+    insufficientEvidence: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
 const chatMessageSchema = new mongoose.Schema({
   sender: {
     type: String,
@@ -34,7 +61,12 @@ const chatMessageSchema = new mongoose.Schema({
   },
   languageUsed: {
     type: String,
-    default: "hi",
+    default: "en",
+  },
+  // Grounded analysis breakdown (Commit 8/9 structured output)
+  analysis: {
+    type: groundedAnalysisSchema,
+    default: null,
   },
   // Citations / Scheme recommendations made by AI
   recommendedSchemes: [
@@ -63,6 +95,12 @@ const aiChatSessionSchema = new mongoose.Schema(
       unique: true,
       index: true,
     },
+    // Secure token hash for guest session authorization (SHA-256)
+    guestTokenHash: {
+      type: String,
+      default: null,
+      select: false, // Excluded from default queries for security
+    },
     // Context mode derived from Home page card triggers
     sessionMode: {
       type: String,
@@ -75,10 +113,13 @@ const aiChatSessionSchema = new mongoose.Schema(
       type: Object,
       default: null,
     },
+    lastActiveAt: {
+      type: Date,
+      default: Date.now,
+    },
     messages: [chatMessageSchema],
   },
   { timestamps: true }
 );
 
 export const AiChatSession = mongoose.model("AiChatSession", aiChatSessionSchema);
-

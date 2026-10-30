@@ -120,6 +120,35 @@ ${text}
 };
 
 /**
+ * Formats bounded prior conversation history as conversational dialogue context.
+ * Explicitly marks history as dialogue context ONLY, never as factual evidence.
+ *
+ * @param {Array<Object>} history
+ * @returns {string} Delimited conversation context block
+ */
+export const formatConversationContext = (history = []) => {
+    if (!Array.isArray(history) || history.length === 0) {
+        return "";
+    }
+
+    const bounded = history.slice(-4);
+    const lines = bounded
+        .map((msg) => {
+            const role = msg?.sender === "assistant" || msg?.role === "assistant" ? "Assistant" : "Citizen";
+            const text = (msg?.text || "").trim().slice(0, 500);
+            return `${role}: ${text}`;
+        })
+        .filter((line) => line.length > 5);
+
+    if (lines.length === 0) return "";
+
+    return `\n<recent_conversation_context>
+Note: The following recent exchange provides dialogue context for pronoun/topic resolution ONLY. It is NOT official evidence and must NEVER be treated as a source of legal truth. All factual claims must be substantiated strictly by <retrieved_evidence>.
+${lines.join("\n")}
+</recent_conversation_context>\n`;
+};
+
+/**
  * System instruction dedicated to civic grounded analysis with strict prompt injection defense.
  */
 export const CIVIC_ANALYSIS_SYSTEM_INSTRUCTION = `
@@ -142,6 +171,7 @@ CRITICAL GROUNDING & VERACITY RULES:
    - "interpretation": Provide a clear, accessible vernacular explanation of what those facts mean for the citizen, without exaggerating or adding new rules.
    - "limitations": List any ambiguities, missing criteria, or jurisdictional limits noted in the document.
 6. Preserve Official Terms: Keep official scheme names (e.g. "PM-KISAN", "Ayushman Bharat", "PM SVANidhi"), statutory Acts, Ministries, and legal terminology intact where appropriate.
+7. Dialogue Context: Conversation history (if provided) is dialogue context ONLY for pronoun and topic resolution. It must never be treated as trusted evidence. Never cite conversation history as a legal source.
 
 CITATION PROTOCOL:
 - In "referencedChunkIds", include an array of ONLY the exact chunk ID strings (from id="...") that directly support your answer.
@@ -156,11 +186,13 @@ CITATION PROTOCOL:
  * @param {string} params.query - Validated citizen query
  * @param {string} params.language - Validated language code
  * @param {Array<Object>} params.evidenceList - Retrieved evidence chunks
+ * @param {Array<Object>} [params.conversationHistory] - Bounded conversation context
  * @returns {string} Formatted prompt
  */
-export const buildCivicPrompt = ({ query, language, evidenceList = [] }) => {
+export const buildCivicPrompt = ({ query, language, evidenceList = [], conversationHistory = [] }) => {
     const langName = LANGUAGE_NAMES[language] || "English";
     const evidenceBlock = formatEvidenceBlock(evidenceList);
+    const historyBlock = formatConversationContext(conversationHistory);
 
     return `
 You are analyzing a citizen query regarding Indian government schemes, policies, or civic regulations.
@@ -168,7 +200,7 @@ You are analyzing a citizen query regarding Indian government schemes, policies,
 TARGET LANGUAGE FOR EXPLANATION: ${langName} (${language})
 The 'answer', 'summary', 'sourceFacts', 'interpretation', and 'limitations' MUST be written in ${langName}.
 Keep official scheme names, Act titles, and legal terms properly preserved.
-
+${historyBlock}
 CITIZEN QUERY:
 "${query}"
 
@@ -309,6 +341,7 @@ export const buildInsufficientEvidenceResponse = (language = "en") => {
  * @param {number} [options.limit=5] - Evidence retrieval limit
  * @param {"hybrid"|"semantic"|"keyword"} [options.retrievalMode="hybrid"] - Mode for retrieval
  * @param {Array<Object>} [options.evidence] - Optional pre-retrieved evidence array (bypasses retrieval)
+ * @param {Array<Object>} [options.conversationHistory] - Optional bounded previous conversation turns
  * @param {Function} [options.retrievalService] - Custom retrieval function for testing/injection
  * @param {Function} [options.geminiGenerator] - Custom structured JSON generator for testing/injection
  * @param {string} [options.model] - Specific model override
@@ -322,8 +355,26 @@ export const analyzeCivicQuery = async (query, options = {}) => {
     const retrievalLimit = Math.max(1, Number(options.limit) || 5);
     const retrievalMode = options.retrievalMode || "hybrid";
     const filters = options.filters || {};
+    const conversationHistory = Array.isArray(options.conversationHistory)
+        ? options.conversationHistory.slice(-4)
+        : [];
 
-    // 2. Retrieve evidence (or use pre-supplied evidence)
+    // 2. Formulate retrieval query (combining last citizen question if this is a brief follow-up)
+    let retrievalQuery = validQuery;
+    if (conversationHistory.length > 0) {
+        const lastUserMsg = [...conversationHistory]
+            .reverse()
+            .find((m) => m?.sender === "user" || m?.role === "user");
+        if (
+            lastUserMsg &&
+            lastUserMsg.text &&
+            (validQuery.length < 35 || /\b(it|this|that|under it|the scheme|the loan|same|above)\b/i.test(validQuery))
+        ) {
+            retrievalQuery = `${lastUserMsg.text.slice(0, 100).trim()} ${validQuery}`;
+        }
+    }
+
+    // 3. Retrieve evidence (or use pre-supplied evidence)
     let evidenceList = [];
     if (Array.isArray(options.evidence)) {
         evidenceList = options.evidence;
@@ -333,7 +384,7 @@ export const analyzeCivicQuery = async (query, options = {}) => {
             : retrieveEvidence;
 
         try {
-            evidenceList = await retrievalFn(validQuery, {
+            evidenceList = await retrievalFn(retrievalQuery, {
                 mode: retrievalMode,
                 limit: retrievalLimit,
                 filters,
@@ -347,16 +398,17 @@ export const analyzeCivicQuery = async (query, options = {}) => {
         }
     }
 
-    // 3. Fast-path: When zero evidence is retrieved, return insufficient evidence immediately
+    // 4. Fast-path: When zero evidence is retrieved, return insufficient evidence immediately
     if (!evidenceList || evidenceList.length === 0) {
         return buildInsufficientEvidenceResponse(validLanguage);
     }
 
-    // 4. Assemble prompt and call AI generation
+    // 5. Assemble prompt and call AI generation
     const prompt = buildCivicPrompt({
         query: validQuery,
         language: validLanguage,
         evidenceList,
+        conversationHistory,
     });
 
     const generatorFn = typeof options.geminiGenerator === "function"
@@ -379,7 +431,7 @@ export const analyzeCivicQuery = async (query, options = {}) => {
         );
     }
 
-    // 5. Validate and normalize the AI output
+    // 6. Validate and normalize the AI output
     if (!rawAiResult || typeof rawAiResult !== "object") {
         throw new ApiError(500, "Civic analysis received invalid structured output from AI service.");
     }
@@ -388,7 +440,7 @@ export const analyzeCivicQuery = async (query, options = {}) => {
         ? rawAiResult.referencedChunkIds
         : [];
 
-    // 6. Resolve citations strictly against actual retrieved evidence
+    // 7. Resolve citations strictly against actual retrieved evidence
     const citations = resolveCitations(referencedIds, evidenceList);
 
     const isInsufficient = Boolean(rawAiResult.insufficientEvidence);
@@ -402,7 +454,7 @@ export const analyzeCivicQuery = async (query, options = {}) => {
         ? rawAiResult.limitations.map((l) => String(l).trim()).filter(Boolean)
         : [];
 
-    // 7. Enforce exact missing-information clause if evidence is insufficient or unsupported
+    // 8. Enforce exact missing-information clause if evidence is insufficient or unsupported
     if (isInsufficient) {
         if (!answer.includes(EXACT_MISSING_INFO_SENTENCE)) {
             answer = answer ? `${answer} ${EXACT_MISSING_INFO_SENTENCE}` : EXACT_MISSING_INFO_SENTENCE;

@@ -1,99 +1,386 @@
-import React, { useState } from "react";
-import { MessageSquare, Send, ShieldAlert, Sparkles } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import {
+  MessageSquare,
+  Send,
+  ShieldAlert,
+  Sparkles,
+  ExternalLink,
+  RotateCcw,
+  BookOpen,
+  CheckCircle2,
+  AlertTriangle,
+  FileText,
+  HelpCircle,
+} from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { Button } from "@/components/ui/Button";
+import {
+  assistantService,
+  AssistantMessage,
+  getStoredSessionId,
+  clearStoredSession,
+} from "@/services/assistant.service";
 
-interface ChatMessage {
-  id: string;
-  sender: "user" | "assistant";
-  text: string;
-  timestamp: string;
-}
+const SUGGESTED_QUERIES = [
+  {
+    en: "What is the loan amount and interest subsidy under PM SVANidhi?",
+    hi: "पीएम स्वनिधि योजना के तहत कितना ऋण और ब्याज सब्सिडी मिलती है?",
+  },
+  {
+    en: "Who is eligible for PM-KISAN direct income support?",
+    hi: "पीएम-किसान योजना के लिए कौन पात्र है और कितना पैसा मिलता है?",
+  },
+  {
+    en: "What hospital treatments are covered under Ayushman Bharat (PM-JAY)?",
+    hi: "आयुष्मान भारत योजना के तहत अस्पताल में कितना मुफ्त इलाज मिलता है?",
+  },
+  {
+    en: "What are the rules and subsidies for rooftop solar installation?",
+    hi: "घर की छत पर सोलर पैनल लगाने के लिए क्या सब्सिडी मिलती है?",
+  },
+];
 
 export const CivicAssistant: React.FC = () => {
-  const { t } = useLanguage();
-  const [messages] = useState<ChatMessage[]>([
-    {
-      id: "1",
-      sender: "assistant",
-      text: "नमस्ते! मैं लोक सेतु नागरिक सहायक हूँ। आप मुझसे किसी भी सरकारी योजना, छात्रवृत्ति, कानूनी अधिकार, व्यापार नियमों या पात्रता के बारे में पूछ सकते हैं।",
-      timestamp: "Just now",
-    },
-  ]);
+  const { language, t } = useLanguage();
+  const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [inputText, setInputText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(() => getStoredSessionId());
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const handleSend = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim()) return;
+  // Scroll to bottom on new messages
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, loading]);
+
+  // Load existing session history if available
+  useEffect(() => {
+    let isMounted = true;
+    const loadSession = async () => {
+      const activeSessionId = getStoredSessionId();
+      if (!activeSessionId) return;
+
+      try {
+        const history = await assistantService.getSessionHistory(activeSessionId);
+        if (isMounted && history?.messages && history.messages.length > 0) {
+          setMessages(history.messages);
+          setSessionId(history.sessionId);
+        }
+      } catch {
+        // Stale or inaccessible session: clear it cleanly
+        clearStoredSession();
+        if (isMounted) {
+          setSessionId(null);
+        }
+      }
+    };
+
+    loadSession();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleSend = async (queryText?: string) => {
+    const textToSend = (queryText || inputText).trim();
+    if (!textToSend || loading) return;
+
+    setError(null);
+    setLoading(true);
+
+    // Optimistically add user message to UI
+    const optimisticUserMessage: AssistantMessage = {
+      id: `user-${Date.now()}`,
+      sender: "user",
+      text: textToSend,
+      languageUsed: language,
+      timestamp: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, optimisticUserMessage]);
+    if (!queryText) {
+      setInputText(""); // Clear input when explicitly typing
+    }
+
+    try {
+      const response = await assistantService.sendMessage({
+        query: textToSend,
+        language,
+        sessionId: sessionId || undefined,
+      });
+
+      if (response.sessionId) {
+        setSessionId(response.sessionId);
+      }
+
+      setMessages((prev) => [...prev, response.message]);
+    } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to generate answer. Please try again.";
+      setError(errorMsg);
+      // Restore user text if it failed so they can retry without retyping
+      if (!queryText) {
+        setInputText(textToSend);
+      }
+      // Remove optimistic message on failure
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticUserMessage.id));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetSession = () => {
+    clearStoredSession();
+    setSessionId(null);
+    setMessages([]);
+    setError(null);
     setInputText("");
   };
 
+  const isHindi = language === "hi";
+
   return (
-    <div className="max-w-4xl mx-auto h-[calc(100vh-14rem)] min-h-[500px] flex flex-col bg-white border border-paper-border rounded-lg shadow-editorial-lg overflow-hidden">
+    <div className="max-w-4xl mx-auto h-[calc(100vh-12rem)] min-h-[550px] flex flex-col bg-white border border-paper-border rounded-lg shadow-editorial-lg overflow-hidden">
       {/* Chat Header */}
-      <div className="px-5 py-4 border-b border-paper-border bg-paper-light flex items-center justify-between">
+      <div className="px-5 py-3.5 border-b border-paper-border bg-paper-light flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded bg-neel text-white">
-            <MessageSquare className="h-4 w-4 text-mustard" />
+          <div className="flex h-10 w-10 items-center justify-center rounded bg-neel text-white shadow-xs">
+            <MessageSquare className="h-5 w-5 text-mustard" />
           </div>
           <div>
-            <h2 className="font-serif font-bold text-neel text-base">
-              {t("nav.assistant")}
-            </h2>
-            <span className="text-[11px] text-neel-muted flex items-center gap-1 font-medium">
-              <Sparkles className="h-3 w-3 text-vermilion" /> Grounded in Government Gazettes
+            <div className="flex items-center gap-2">
+              <h2 className="font-serif font-bold text-neel text-base">
+                {t("nav.assistant")}
+              </h2>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-sage/40 text-neel border border-sage">
+                <Sparkles className="h-2.5 w-2.5 text-vermilion" /> Grounded RAG
+              </span>
+            </div>
+            <span className="text-[11px] text-neel-muted font-medium block">
+              Grounded strictly in verified Indian government gazettes & policies
             </span>
           </div>
         </div>
 
-        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded bg-paper-dark text-[11px] font-semibold text-neel-muted">
-          <ShieldAlert className="h-3.5 w-3.5 text-mustard-dark" />
-          <span>Informational Guidance Only</span>
+        <div className="flex items-center gap-2">
+          {messages.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleResetSession}
+              leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
+              className="text-xs hidden sm:flex"
+            >
+              New Chat
+            </Button>
+          )}
+
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded bg-paper-dark text-[11px] font-semibold text-neel-muted border border-paper-border">
+            <ShieldAlert className="h-3.5 w-3.5 text-mustard-dark shrink-0" />
+            <span>Informational Guidance Only</span>
+          </div>
         </div>
       </div>
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-paper/30">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 bg-paper/20">
+        {messages.length === 0 && (
+          <div className="text-center py-6 sm:py-10 max-w-xl mx-auto space-y-6">
+            <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-paper-dark border border-paper-border text-vermilion mb-1">
+              <BookOpen className="h-7 w-7" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-serif text-xl sm:text-2xl font-bold text-neel">
+                {isHindi ? "आप किस सरकारी योजना के बारे में जानना चाहते हैं?" : "How can Lok-Setu help you today?"}
+              </h3>
+              <p className="text-xs sm:text-sm text-neel-muted leading-relaxed">
+                {isHindi
+                  ? "नीचे दिए गए सुझावों में से चुनें या अपना प्रश्न लिखें। हमारे उत्तर केवल प्रमाणित सरकारी दस्तावेजों से दिए जाते हैं।"
+                  : "Ask any question about welfare schemes, municipal regulations, eligibility, or rights. Every claim is cited directly from verified official records."}
+              </p>
+            </div>
+
+            {/* Suggested Prompt Chips */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 text-left">
+              {SUGGESTED_QUERIES.map((q, idx) => {
+                const queryPrompt = isHindi ? q.hi : q.en;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSend(queryPrompt)}
+                    className="p-3 rounded border border-paper-border bg-white hover:border-vermilion hover:bg-paper-light transition-all text-left text-xs font-medium text-neel shadow-xs flex items-start gap-2 group"
+                  >
+                    <HelpCircle className="h-4 w-4 text-mustard-dark shrink-0 mt-0.5 group-hover:text-vermilion" />
+                    <span className="line-clamp-2">{queryPrompt}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {messages.map((m) => (
           <div
             key={m.id}
-            className={`flex flex-col ${
-              m.sender === "user" ? "items-end" : "items-start"
-            }`}
+            className={`flex flex-col ${m.sender === "user" ? "items-end" : "items-start"}`}
           >
             <div
-              className={`max-w-[85%] sm:max-w-[75%] rounded-lg p-4 text-sm leading-relaxed shadow-xs ${
+              className={`max-w-[92%] sm:max-w-[85%] rounded-lg p-4 sm:p-5 text-sm leading-relaxed shadow-xs transition-all ${
                 m.sender === "user"
                   ? "bg-neel text-white rounded-br-none"
-                  : "bg-white border border-paper-border text-neel rounded-bl-none"
+                  : "bg-white border border-paper-border text-neel rounded-bl-none space-y-4"
               }`}
             >
-              <p className="whitespace-pre-wrap">{m.text}</p>
+              {m.sender === "user" ? (
+                <p className="whitespace-pre-wrap">{m.text}</p>
+              ) : (
+                <>
+                  {/* Assistant Answer / Summary */}
+                  <div className="text-sm font-sans leading-relaxed text-neel whitespace-pre-wrap">
+                    {m.text}
+                  </div>
+
+                  {/* Grounded Breakdown Details (when available) */}
+                  {m.analysis && (
+                    <div className="space-y-3 pt-2 border-t border-paper-border text-xs">
+                      {/* 1. Stated in Source Facts */}
+                      {m.analysis.sourceFacts && m.analysis.sourceFacts.length > 0 && (
+                        <div className="bg-sage/20 border border-sage/60 rounded p-3 space-y-1.5">
+                          <div className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-[10px] text-neel">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-sage-dark shrink-0" />
+                            <span>Stated in Official Source</span>
+                          </div>
+                          <ul className="space-y-1 text-neel-muted pl-4 list-disc marker:text-neel">
+                            {m.analysis.sourceFacts.map((fact, idx) => (
+                              <li key={idx} className="leading-relaxed">
+                                {fact}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* 2. Limitations / Missing Info Alert */}
+                      {m.analysis.insufficientEvidence && (
+                        <div className="bg-mustard/15 border border-mustard rounded p-2.5 flex items-start gap-2 text-neel">
+                          <AlertTriangle className="h-4 w-4 text-mustard-dark shrink-0 mt-0.5" />
+                          <span className="font-semibold text-xs leading-relaxed">
+                            This document does not clearly specify this information.
+                          </span>
+                        </div>
+                      )}
+
+                      {/* 3. Citations Section */}
+                      {m.analysis.citations && m.analysis.citations.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-neel-muted flex items-center gap-1">
+                            <FileText className="h-3 w-3 text-vermilion" />
+                            <span>Verified Source Evidence</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {m.analysis.citations.map((cite, idx) => (
+                              <div
+                                key={idx}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-paper border border-paper-border text-[11px] font-medium text-neel shadow-xs hover:border-neel transition-colors"
+                              >
+                                <span className="font-bold text-vermilion">{cite.clauseNumber || `Ref #${idx + 1}`}:</span>
+                                <span className="truncate max-w-[200px]" title={cite.title}>
+                                  {cite.title}
+                                </span>
+                                {cite.sourceUrl && (
+                                  <a
+                                    href={cite.sourceUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-neel hover:text-vermilion transition-colors ml-1 p-0.5 rounded hover:bg-paper-dark"
+                                    title="Open official government publication"
+                                  >
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
+
             <span className="text-[10px] text-neel-muted mt-1 px-1">
-              {m.timestamp}
+              {new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
           </div>
         ))}
+
+        {/* Loading Indicator */}
+        {loading && (
+          <div className="flex flex-col items-start space-y-1">
+            <div className="bg-white border border-paper-border rounded-lg rounded-bl-none p-4 shadow-xs flex items-center gap-3">
+              <div className="h-4 w-4 border-2 border-vermilion border-t-transparent rounded-full animate-spin" />
+              <span className="text-xs text-neel font-medium">
+                Consulting verified government policies and assembling citations...
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div ref={messagesEndRef} />
       </div>
+
+      {/* Error Banner with Retry */}
+      {error && (
+        <div className="px-4 py-2.5 bg-vermilion/10 border-t border-vermilion/30 flex items-center justify-between gap-3 text-xs text-vermilion font-medium">
+          <div className="flex items-center gap-2 truncate">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span className="truncate">{error}</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleSend()}
+            className="text-xs h-7 border-vermilion text-vermilion hover:bg-vermilion hover:text-white shrink-0"
+          >
+            Retry
+          </Button>
+        </div>
+      )}
 
       {/* Input Bar */}
       <form
-        onSubmit={handleSend}
-        className="p-3 sm:p-4 bg-white border-t border-paper-border flex items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSend();
+        }}
+        className="p-3 sm:p-4 bg-white border-t border-paper-border flex items-center gap-2 shrink-0"
       >
         <input
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder="Ask a question about government policies, MSME benefits, or legal notices..."
-          className="flex-1 bg-paper-light text-neel placeholder:text-neel-muted/60 text-sm rounded border border-paper-border px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-neel"
+          placeholder={
+            isHindi
+              ? "सरकारी योजनाओं, अधिकारों या सब्सिडी के बारे में प्रश्न पूछें..."
+              : "Ask a question about government policies, subsidies, or civic rights..."
+          }
+          disabled={loading}
+          className="flex-1 bg-paper-light text-neel placeholder:text-neel-muted/60 text-sm rounded border border-paper-border px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-neel disabled:opacity-50"
         />
         <Button
           type="submit"
           variant="primary"
-          disabled={!inputText.trim()}
+          disabled={!inputText.trim() || loading}
           rightIcon={<Send className="h-4 w-4" />}
+          className="shrink-0"
         >
           Send
         </Button>
