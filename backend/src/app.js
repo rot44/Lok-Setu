@@ -12,6 +12,7 @@ import { apiRateLimiter } from "./middlewares/rateLimiter.middleware.js";
 import authRouter from "./routes/auth.routes.js";
 import notificationRouter from "./routes/notification.routes.js";
 import analysisRouter from "./routes/analysis.routes.js";
+import exploreRouter from "./routes/explore.routes.js";
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use(cookieParser());
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/notifications", notificationRouter);
 app.use("/api/v1/analyze", analysisRouter);
+app.use("/api/v1/explore", exploreRouter);
 
 // Health check (used by Render / Railway deployment platforms)
 app.get("/health", (req, res) => {
