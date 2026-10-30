@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import { Resend } from "resend";
 import { User } from "../models/user.model.js";
 import { UserProfile } from "../models/userProfile.model.js";
 import { ApiError } from "../utils/apiError.js";
@@ -7,9 +8,53 @@ import { APIResponse } from "../utils/apiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { emailQueue } from "../queues/email.queue.js";
 
+const resendClient = process.env.RESEND_API_KEY
+    ? new Resend(process.env.RESEND_API_KEY)
+    : null;
+
 // Helper: Secure 6-digit numeric OTP generator
 const generateSixDigitOtp = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// Helper: Dispatch OTP via BullMQ or directly via Resend if Redis is offline
+const dispatchOtpEmail = async (email, otp, type = "verification_otp") => {
+    try {
+        await emailQueue.add("send-verification-otp", {
+            email,
+            type,
+            data: { otp },
+        });
+    } catch (queueErr) {
+        // Fallback: Send directly via Resend if Redis is offline
+        if (resendClient) {
+            try {
+                await resendClient.emails.send({
+                    from: process.env.RESEND_FROM_EMAIL || "Lok Setu <onboarding@resend.dev>",
+                    to: email,
+                    subject:
+                        type === "verification_otp"
+                            ? "Verify your Lok Setu Account"
+                            : "Reset Your Lok Setu Password",
+                    html: `
+                        <div style="font-family:Arial,sans-serif;max-width:500px;margin:auto;padding:30px;border:1px solid #e5e7eb;border-radius:12px;color:#1f2937;">
+                            <h2 style="color:#2563eb;margin-bottom:8px;">🏛️ Lok Setu Security Verification</h2>
+                            <p style="color:#6b7280;margin-bottom:24px;">Apna account verify karne ke liye neeche diya gaya OTP darj karein:</p>
+                            <div style="background:#eff6ff;padding:20px;border-radius:8px;text-align:center;font-size:32px;font-weight:bold;letter-spacing:8px;color:#1d4ed8;">
+                                ${otp}
+                            </div>
+                            <p style="color:#9ca3af;font-size:13px;margin-top:20px;">
+                                ⏳ Yeh OTP sirf <strong>10 minute</strong> tak valid hai.
+                            </p>
+                        </div>
+                    `,
+                });
+                console.log(`✅ [Direct Resend] Sent OTP email directly to ${email}`);
+            } catch (resendErr) {
+                console.error("❌ [Direct Resend Failed]:", resendErr.message);
+            }
+        }
+    }
 };
 
 // Helper: Generate and persist access & refresh tokens
@@ -110,16 +155,8 @@ export const registerUser = asyncHandler(async (req, res) => {
         });
     }
 
-    // 5. Push OTP email job to BullMQ queue (Non-blocking)
-    try {
-        await emailQueue.add("send-verification-otp", {
-            email: user.email,
-            type: "verification_otp",
-            data: { otp: verificationOtp },
-        });
-    } catch (queueErr) {
-        console.warn("⚠️ [Queue Notice] Redis is offline. Email queue job skipped.");
-    }
+    // 5. Send OTP email (BullMQ queue or direct Resend fallback)
+    await dispatchOtpEmail(user.email, verificationOtp, "verification_otp");
 
     // Dev mode OTP console print for effortless Postman testing
     if (process.env.NODE_ENV !== "production") {
@@ -229,16 +266,8 @@ export const resendVerificationOtp = asyncHandler(async (req, res) => {
     user.verificationOtpExpiry = new Date(Date.now() + 10 * 60 * 1000);
     await user.save({ validateBeforeSave: false });
 
-    // Queue email via BullMQ
-    try {
-        await emailQueue.add("send-verification-otp", {
-            email: user.email,
-            type: "verification_otp",
-            data: { otp: verificationOtp },
-        });
-    } catch (queueErr) {
-        console.warn("⚠️ [Queue Notice] Redis is offline. Email queue job skipped.");
-    }
+    // Queue email via BullMQ or direct Resend fallback
+    await dispatchOtpEmail(user.email, verificationOtp, "verification_otp");
 
     if (process.env.NODE_ENV !== "production") {
         console.log(`\n==================================================`);
@@ -402,16 +431,8 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     user.forgotPasswordOtpExpiry = new Date(Date.now() + 10 * 60 * 1000);
     await user.save({ validateBeforeSave: false });
 
-    // Queue email via BullMQ
-    try {
-        await emailQueue.add("send-forgot-password-otp", {
-            email: user.email,
-            type: "forgot_password_otp",
-            data: { otp: forgotPasswordOtp },
-        });
-    } catch (queueErr) {
-        console.warn("⚠️ [Queue Notice] Redis is offline. Email queue job skipped.");
-    }
+    // Queue email via BullMQ or direct Resend fallback
+    await dispatchOtpEmail(user.email, forgotPasswordOtp, "forgot_password_otp");
 
     if (process.env.NODE_ENV !== "production") {
         console.log(`\n==================================================`);
