@@ -15,3 +15,4 @@ router.route("/").get(getProfile).put(updateProfile);
 router.route("/dashboard").get(getDashboardSummary);
 
 export default router;
+
