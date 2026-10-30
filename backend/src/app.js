@@ -1,47 +1,52 @@
-//app.js is generally used to create and configure your express application
-import express from "express"; //express is a framework for building web applications and APIs
-import cors from "cors"; //cors is a middleware for enabling cross-origin resource sharing
-import cookieParser from "cookie-parser"; //cookie-parser is a middleware for parsing cookies from the request headers
-import compression from "compression";  //compression is a middleware that compresses http responses using algorithms such as gzip/Brotli depending on negotiation
-import helmet from "helmet";    //helmet is a middleware that sets various http headers
-import morgan from "morgan";    //morgan is a middleware that logs http requests to the console
+// app.js — creates and configures the Express application
+import express from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import compression from "compression";
+import helmet from "helmet";
+import morgan from "morgan";
+import { errorHandler } from "./middlewares/error.middleware.js";
+import { apiRateLimiter } from "./middlewares/rateLimiter.middleware.js";
 
-const app=express();    //creates an express application
+const app = express();
 
-//compress all responses (must be first)
+// Compress all HTTP responses (gzip/Brotli) — must be first
 app.use(compression());
 
-//set secure http headers
-//express middleware that sets various http security headers to improve the security of your web application
-//crossOriginResourcePolicy:false means helmet baaki security headers manage karega but CORP header ko helmet manage nahi karega
-app.use(helmet({crossOriginResourcePolicy:false}));
+// Set secure HTTP headers
+// crossOriginResourcePolicy:false — helmet manages all other security headers
+// but does NOT block cross-origin asset loading (needed for S3 audio/image URLs)
+app.use(helmet({ crossOriginResourcePolicy: false }));
 
+// HTTP request logger (dev mode: coloured, concise)
+app.use(morgan("dev"));
 
-app.use(morgan("dev")); //morgan is a middleware that logs http requests to the console
-
-//enables cors
-//this allows frontend to send request to backend
-//origin=true means all origins are allowed and credentials=true means cookies can be sent to the server
+// Enable CORS — allows the React frontend to call this API with cookies
 app.use(
     cors({
-        origin:true,
-        credentials:true,
+        origin: process.env.CLIENT_URL || true, // Set CLIENT_URL in .env for production
+        credentials: true,
     })
 );
 
-//parse body
-app.use(express.json({limit:"16kb"}));  //this middleware parses incoming json helps in destructuring in req.body
-app.use(express.urlencoded({extended:true,limit:"16kb"}));  //this middleware parses incoming url encoded data  extended=true allows nested objects
+// Apply global rate limiting across all routes
+app.use(apiRateLimiter);
 
-app.use(cookieParser()); //this middleware parses incoming cookies from the browser stores them in req.cookies
+// Body parsers
+app.use(express.json({ limit: "16kb" }));
+app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 
-//import all routes
+// Cookie parser — reads JWT tokens stored in HTTP-only cookies
+app.use(cookieParser());
 
+// ─── Routes (add here as they are built) ─────────────────────────────────────
 
-//health check route for Render
+// Health check (used by Render / Railway deployment platforms)
+app.get("/health", (req, res) => {
+    res.status(200).json({ success: true, message: "Lok Setu API is running 🏛️" });
+});
 
-
-//global error handler
-import { errorHandler } from "./middlewares/error.middleware.js";
+// ─── Global Error Handler (must be last) ─────────────────────────────────────
 app.use(errorHandler);
+
 export default app;

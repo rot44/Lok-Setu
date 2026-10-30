@@ -1,20 +1,21 @@
-import dotenv from "dotenv";    //dotenv helps to load environment variables from a .env file into process.env
-dotenv.config({path:'./.env'}); //this loads environment variables from a .env file into process.env
+import dotenv from "dotenv";
+dotenv.config({ path: "./.env" });
 
-import connectDB from "./db/index.js"; //imports the connectDB function
-import app from "./app.js"; //imports the express app
+import connectDB from "./db/index.js";
+import app from "./app.js";
 
+// Boot the email worker inside the main server process
+// The worker connects to Redis and listens for emailQueue jobs in the background
+import "./workers/email.worker.js";
 
-//connect database
-//connect DB returns a promise because it is an asynchronous function
-//and we need to wait for the database to be connected before starting the server
 connectDB()
-.then(()=>{
-    let port=process.env.PORT||8000; //port is set to 8000 if process.env.PORT is not defined
-    app.listen(port,()=>{
-        console.log(`Server running at port ${port}\n`);  //server is started on the specified port
+    .then(() => {
+        const port = process.env.PORT || 8000;
+        app.listen(port, () => {
+            console.log(`🚀 Lok Setu server running at port ${port}`);
+        });
     })
-})
-.catch((err)=>{
-    console.log(err);
-})
+    .catch((err) => {
+        console.error("❌ MongoDB connection failed:", err);
+        process.exit(1);
+    });

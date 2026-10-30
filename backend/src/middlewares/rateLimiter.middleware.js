@@ -1,23 +1,48 @@
-import rateLimit from "express-rate-limit"; //use for rate limiting the requests
-import { RedisStore } from "rate-limit-redis";  //use for storing the rate limit data in redis
-import Redis from "ioredis"; //use for connecting to redis
+import rateLimit from "express-rate-limit";
+import { RedisStore } from "rate-limit-redis";
+import Redis from "ioredis";
 
-//create a dedicated Redis connection for the rate limiter
-const redisClient=process.env.REDIS_URL?new Redis(process.env.REDIS_URL):new Redis({host:"127.0.0.1",port:6379});
+// Dedicated Redis client for rate limiting (no maxRetriesPerRequest:null needed here)
+const redisClient = process.env.REDIS_URL
+    ? new Redis(process.env.REDIS_URL)
+    : new Redis({
+          host: process.env.REDIS_HOST || "127.0.0.1",
+          port: parseInt(process.env.REDIS_PORT) || 6379,
+      });
 
-export const tatkalRateLimiter=rateLimit({
-    windowMs:60*1000, //1 minute window
-    max:5, //limit each IP to 5 requests per `windowMs`
-    standardHeaders:true, //return rate limit info in the `RateLimit-*` headers
-    legacyHeaders:false, //disable the `X-RateLimit-*` headers
-    store:new RedisStore({
-        sendCommand:(...args)=>redisClient.call(...args),
+// General API rate limiter — applied globally on all routes
+export const apiRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minute window
+    max: 100, // max 100 requests per IP per window
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: new RedisStore({
+        sendCommand: (...args) => redisClient.call(...args),
     }),
-    handler:(req,res)=>{    //when rate limit exceeds then run this
+    handler: (req, res) => {
         res.status(429).json({
-            success:false,
-            message:"Too many booking attempts from this IP. Please try again after a minute.",
-            data:null
+            success: false,
+            message: "Too many requests from this IP. Please try again after 15 minutes.",
+            data: null,
         });
-    }
+    },
+});
+
+// Strict rate limiter for auth routes (OTP send, login, register)
+// Prevents brute-force and OTP spam
+export const authRateLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000, // 10 minute window
+    max: 10, // max 10 auth attempts per IP per window
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: new RedisStore({
+        sendCommand: (...args) => redisClient.call(...args),
+    }),
+    handler: (req, res) => {
+        res.status(429).json({
+            success: false,
+            message: "Too many auth attempts. Please try again after 10 minutes.",
+            data: null,
+        });
+    },
 });
