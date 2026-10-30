@@ -2,6 +2,7 @@ import { createBrowserRouter } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Home } from "@/pages/Home";
 import { ExploreSchemes } from "@/pages/ExploreSchemes";
+import { SchemeDetailPage } from "@/pages/SchemeDetail";
 import { AnalyzeDocument } from "@/pages/AnalyzeDocument";
 import { CivicAssistant } from "@/pages/CivicAssistant";
 import { NotificationsFeed } from "@/pages/NotificationsFeed";
@@ -27,6 +28,10 @@ export const router = createBrowserRouter([
       {
         path: "schemes",
         element: <ExploreSchemes />,
+      },
+      {
+        path: "schemes/:id",
+        element: <SchemeDetailPage />,
       },
       {
         path: "analyze",

@@ -215,7 +215,7 @@ export const getSchemeById = asyncHandler(async (req, res) => {
 
     // Fetch pre-generated audio explainers & plain summaries across languages
     const explainers = await Explainer.find({ documentId: id }).select(
-        "languageCode languageName plainSummary keyRights eligibilityCriteria citizenImpact businessImpact audio.audioUrl audio.durationSeconds"
+        "languageCode languageName plainSummary keyRights eligibilityCriteria citizenImpact businessImpact requiredDocuments howToApplySteps audio.audioUrl audio.durationSeconds"
     );
 
     return res.status(200).json(
