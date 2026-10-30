@@ -1,0 +1,6 @@
+TESTING_ROADMAP.md
+.DS_Store
+*.log
+backend/node_modules/
+backend/.env
+frontend/node_modules/

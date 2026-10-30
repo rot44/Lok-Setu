@@ -12,7 +12,7 @@ import {
 const realGovernmentSchemes = [
     {
         title: "National Scholarship Portal - Central Sector Scheme",
-        documentType: DOCUMENT_TYPES.SCHEME,
+        documentType: DOCUMENT_TYPES.WELFARE_POLICY,
         jurisdictionLevel: JURISDICTION_LEVELS.CENTRAL,
         applicableState: "ALL",
         issuingAuthority: "Ministry of Education (Department of Higher Education)",
@@ -36,7 +36,7 @@ const realGovernmentSchemes = [
     },
     {
         title: "PM-KISAN (Pradhan Mantri Kisan Samman Nidhi)",
-        documentType: DOCUMENT_TYPES.SCHEME,
+        documentType: DOCUMENT_TYPES.WELFARE_POLICY,
         jurisdictionLevel: JURISDICTION_LEVELS.CENTRAL,
         applicableState: "ALL",
         issuingAuthority: "Ministry of Agriculture & Farmers Welfare",
@@ -60,7 +60,7 @@ const realGovernmentSchemes = [
     },
     {
         title: "Ayushman Bharat - PMJAY (Pradhan Mantri Jan Arogya Yojana)",
-        documentType: DOCUMENT_TYPES.SCHEME,
+        documentType: DOCUMENT_TYPES.WELFARE_POLICY,
         jurisdictionLevel: JURISDICTION_LEVELS.CENTRAL,
         applicableState: "ALL",
         issuingAuthority: "National Health Authority (NHA)",
@@ -84,7 +84,7 @@ const realGovernmentSchemes = [
     },
     {
         title: "Beti Bachao Beti Padhao",
-        documentType: DOCUMENT_TYPES.POLICY,
+        documentType: DOCUMENT_TYPES.GOVERNMENT_NOTIFICATION,
         jurisdictionLevel: JURISDICTION_LEVELS.CENTRAL,
         applicableState: "ALL",
         issuingAuthority: "Ministry of Women and Child Development",
@@ -108,7 +108,7 @@ const realGovernmentSchemes = [
     },
     {
         title: "Credit Guarantee Scheme for Micro & Small Enterprises (CGTMSE)",
-        documentType: DOCUMENT_TYPES.SCHEME,
+        documentType: DOCUMENT_TYPES.WELFARE_POLICY,
         jurisdictionLevel: JURISDICTION_LEVELS.CENTRAL,
         applicableState: "ALL",
         issuingAuthority: "Ministry of Micro, Small & Medium Enterprises",
@@ -132,7 +132,7 @@ const realGovernmentSchemes = [
     },
     {
         title: "Pradhan Mantri Awas Yojana (Urban)",
-        documentType: DOCUMENT_TYPES.SCHEME,
+        documentType: DOCUMENT_TYPES.WELFARE_POLICY,
         jurisdictionLevel: JURISDICTION_LEVELS.CENTRAL,
         applicableState: "ALL",
         issuingAuthority: "Ministry of Housing and Urban Affairs",
@@ -156,7 +156,7 @@ const realGovernmentSchemes = [
     },
     {
         title: "Mukhyamantri Kanya Sumangala Yojana (Uttar Pradesh)",
-        documentType: DOCUMENT_TYPES.SCHEME,
+        documentType: DOCUMENT_TYPES.WELFARE_POLICY,
         jurisdictionLevel: JURISDICTION_LEVELS.STATE,
         applicableState: "Uttar Pradesh",
         issuingAuthority: "Department of Women and Child Development, Uttar Pradesh",

@@ -5,34 +5,45 @@ import { config } from "../config/env.js";
 
 const redisOptions = {
     enableReadyCheck: true,
-    lazyConnect: false,
+    lazyConnect: true,
     retryStrategy(times) {
-        return Math.min(times * 500, 10000);
+        if (times > 2) return null;
+        return 2000;
     },
 };
 
-if (config.redis.password) {
-    redisOptions.password = config.redis.password;
+const redisPassword = config?.redis?.password || process.env.REDIS_PASSWORD;
+if (redisPassword) {
+    redisOptions.password = redisPassword;
 }
 
-// Dedicated Redis client for rate limiting
-export const redisRateLimitClient = config.redis.url
-    ? new Redis(config.redis.url, redisOptions)
+const redisUrl = config?.redis?.url || process.env.REDIS_URL;
+const redisHost = config?.redis?.host || process.env.REDIS_HOST || "127.0.0.1";
+const redisPort = config?.redis?.port || parseInt(process.env.REDIS_PORT, 10) || 6379;
+
+export const redisRateLimitClient = redisUrl
+    ? new Redis(redisUrl, redisOptions)
     : new Redis({
-          host: config.redis.host,
-          port: config.redis.port,
+          host: redisHost,
+          port: redisPort,
           ...redisOptions,
       });
 
 // Alias for backwards compatibility
 export const redisClient = redisRateLimitClient;
 
+let hasLoggedRateLimitWarning = false;
+
 redisRateLimitClient.on("connect", () => {
+    hasLoggedRateLimitWarning = false;
     console.log("✅ [RateLimiter Redis] Connected");
 });
 
 redisRateLimitClient.on("error", (err) => {
-    console.warn("⚠️ Rate-limit Redis warning:", err.message);
+    if (!hasLoggedRateLimitWarning) {
+        console.warn("⚠️ Rate-limit Redis notice (falling back to memory store):", err.message);
+        hasLoggedRateLimitWarning = true;
+    }
 });
 
 /**
@@ -41,24 +52,27 @@ redisRateLimitClient.on("error", (err) => {
 const safeSendCommand = async (...args) => {
     try {
         if (redisRateLimitClient.status !== "ready") {
-            // If Redis is temporarily offline during local dev, skip rate limit counter
             return null;
         }
         return await redisRateLimitClient.call(...args);
-    } catch (err) {
-        console.warn(`⚠️ [RateLimiter] Redis command error: ${err.message}`);
+    } catch (_err) {
         return null;
     }
 };
 
-// General API rate limiter — applied globally on all routes (100 reqs / 15 mins)
+/**
+ * General API Rate Limiter
+ * Applied globally across all API routes.
+ * Max 100 requests per 15 minutes per IP.
+ * Uses high-performance in-memory store in dev/test, and RedisStore in production.
+ */
 export const apiRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
-    store: new RedisStore({
-        sendCommand: safeSendCommand,
+    ...(process.env.NODE_ENV === "production" && {
+        store: new RedisStore({ sendCommand: safeSendCommand }),
     }),
     handler: (req, res) => {
         res.status(429).json({
@@ -69,14 +83,18 @@ export const apiRateLimiter = rateLimit({
     },
 });
 
-// Strict rate limiter for auth routes (10 attempts / 10 mins)
+/**
+ * Strict Auth Rate Limiter
+ * Applied on authentication routes (register, login, OTP resend, forgot password).
+ * Max 10 attempts per 10 minutes in production; relaxed in dev/test to avoid blocking test runners.
+ */
 export const authRateLimiter = rateLimit({
     windowMs: 10 * 60 * 1000,
-    max: 10,
+    max: process.env.NODE_ENV === "production" ? 10 : 100,
     standardHeaders: true,
     legacyHeaders: false,
-    store: new RedisStore({
-        sendCommand: safeSendCommand,
+    ...(process.env.NODE_ENV === "production" && {
+        store: new RedisStore({ sendCommand: safeSendCommand }),
     }),
     handler: (req, res) => {
         res.status(429).json({
@@ -92,11 +110,11 @@ export const authRateLimiter = rateLimit({
  */
 export const closeRateLimitRedis = async () => {
     try {
-        if (redisRateLimitClient.status !== "end") {
+        if (redisRateLimitClient && redisRateLimitClient.status !== "end") {
             await redisRateLimitClient.quit();
         }
         console.log("🛑 [RateLimiter] Redis connection closed cleanly.");
-    } catch (err) {
-        console.error("⚠️ Error while closing rate limiter Redis:", err.message);
+    } catch (_err) {
+        // Safe ignore
     }
 };

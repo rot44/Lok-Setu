@@ -1,5 +1,4 @@
-import dotenv from "dotenv";
-dotenv.config({ path: "./.env" });
+import "dotenv/config";
 
 import { Worker } from "bullmq";
 import { Resend } from "resend";

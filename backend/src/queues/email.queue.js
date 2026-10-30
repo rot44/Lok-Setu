@@ -4,34 +4,43 @@ import { config } from "../config/env.js";
 import { ApiError } from "../utils/apiError.js";
 
 let isConnected = false;
+let hasLoggedQueueWarning = false;
 
-// Single shared Redis connection for BullMQ
 // maxRetriesPerRequest: null is MANDATORY for BullMQ
 const redisOptions = {
     maxRetriesPerRequest: null,
     enableReadyCheck: true,
     lazyConnect: false,
     retryStrategy(times) {
-        // Exponential backoff up to 10 seconds, but don't crash
-        return Math.min(times * 500, 10000);
+        if (times > 3) {
+            // Stop reconnect loop if Redis is permanently offline in dev
+            return null;
+        }
+        return Math.min(times * 500, 2000);
     },
 };
 
-if (config.redis.password) {
-    redisOptions.password = config.redis.password;
+const redisPassword = config?.redis?.password || process.env.REDIS_PASSWORD;
+if (redisPassword) {
+    redisOptions.password = redisPassword;
 }
 
-export const redisConnection = config.redis.url
-    ? new Redis(config.redis.url, redisOptions)
+const redisUrl = config?.redis?.url || process.env.REDIS_URL;
+const redisHost = config?.redis?.host || process.env.REDIS_HOST || "127.0.0.1";
+const redisPort = config?.redis?.port || parseInt(process.env.REDIS_PORT, 10) || 6379;
+
+export const redisConnection = redisUrl
+    ? new Redis(redisUrl, redisOptions)
     : new Redis({
-          host: config.redis.host,
-          port: config.redis.port,
+          host: redisHost,
+          port: redisPort,
           ...redisOptions,
       });
 
 redisConnection.on("connect", () => {
     isConnected = true;
-    console.log("✅ [Redis] Connection established");
+    hasLoggedQueueWarning = false;
+    console.log("✅ [Redis] Connection established for BullMQ email queue");
 });
 
 redisConnection.on("ready", () => {
@@ -40,8 +49,10 @@ redisConnection.on("ready", () => {
 
 redisConnection.on("error", (err) => {
     isConnected = false;
-    // Informative log without crashing node process
-    console.error(`❌ [Redis] Connection warning: ${err.message}`);
+    if (!hasLoggedQueueWarning) {
+        console.warn("⚠️ [Redis] Offline notice (BullMQ queue paused):", err.message);
+        hasLoggedQueueWarning = true;
+    }
 });
 
 redisConnection.on("close", () => {

@@ -1,15 +1,77 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import { Resend } from "resend";
 import { User } from "../models/user.model.js";
 import { UserProfile } from "../models/userProfile.model.js";
 import { ApiError } from "../utils/apiError.js";
 import { APIResponse } from "../utils/apiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { emailQueue } from "../queues/email.queue.js";
+import { emailQueue, redisConnection } from "../queues/email.queue.js";
+
+const getResendClient = () => {
+    return process.env.RESEND_API_KEY
+        ? new Resend(process.env.RESEND_API_KEY)
+        : null;
+};
 
 // Helper: Secure 6-digit numeric OTP generator
 const generateSixDigitOtp = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// Helper: Dispatch OTP via direct Resend API (instant delivery) with BullMQ fallback
+const dispatchOtpEmail = async (email, otp, type = "verification_otp") => {
+    // 1. Send directly through Resend API for instant inbox delivery
+    const resendClient = getResendClient();
+    if (resendClient) {
+        try {
+            const subject =
+                type === "verification_otp"
+                    ? "Verify your Lok Setu Account"
+                    : "Reset Your Lok Setu Password";
+
+            const { data, error } = await resendClient.emails.send({
+                from: process.env.RESEND_FROM_EMAIL || "Lok Setu <onboarding@resend.dev>",
+                to: email,
+                subject,
+                html: `
+                    <div style="font-family:Arial,sans-serif;max-width:500px;margin:auto;padding:30px;border:1px solid #e5e7eb;border-radius:12px;color:#1f2937;">
+                        <h2 style="color:#2563eb;margin-bottom:8px;">🏛️ Lok Setu Security Verification</h2>
+                        <p style="color:#6b7280;margin-bottom:24px;">Apna account verify karne ke liye neeche diya gaya OTP darj karein:</p>
+                        <div style="background:#eff6ff;padding:20px;border-radius:8px;text-align:center;font-size:32px;font-weight:bold;letter-spacing:8px;color:#1d4ed8;">
+                            ${otp}
+                        </div>
+                        <p style="color:#9ca3af;font-size:13px;margin-top:20px;">
+                            ⏳ Yeh OTP sirf <strong>10 minute</strong> tak valid hai.<br/>
+                            Agar aapne yeh request nahi ki toh is email ko ignore karein.
+                        </p>
+                    </div>
+                `,
+            });
+
+            if (error) {
+                console.error("❌ [Resend Error]:", error);
+            } else {
+                console.log(`✅ [Direct Resend] Sent OTP email to ${email} (ID: ${data?.id})`);
+                return;
+            }
+        } catch (resendErr) {
+            console.error("❌ [Direct Resend Exception]:", resendErr.message);
+        }
+    }
+
+    // 2. Fallback: Queue via BullMQ if Redis is ready
+    if (redisConnection && redisConnection.status === "ready") {
+        try {
+            await emailQueue.add("send-verification-otp", {
+                email,
+                type,
+                data: { otp },
+            });
+        } catch (queueErr) {
+            console.warn("⚠️ [Queue Notice]:", queueErr.message);
+        }
+    }
 };
 
 // Helper: Generate and persist access & refresh tokens
@@ -47,7 +109,7 @@ const cookieOptions = {
  * @access  Public
  */
 export const registerUser = asyncHandler(async (req, res) => {
-    const { username, email, password, phone, role, preferredLanguage, state, city } = req.body;
+    const { username, email, password, phone, role, preferredLanguage, state, city } = req.body || {};
 
     // 1. Mandatory validations
     if (!username || !email || !password) {
@@ -76,7 +138,9 @@ export const registerUser = asyncHandler(async (req, res) => {
 
     let user;
     if (existingUser && !existingUser.isVerified) {
-        // Update existing unverified user
+        // Update existing unverified user with fresh credentials and OTP
+        existingUser.email = email.toLowerCase();
+        existingUser.username = username.toLowerCase();
         existingUser.password = password; // Will be hashed by pre-save hook
         existingUser.verificationOtp = verificationOtp;
         existingUser.verificationOtpExpiry = verificationOtpExpiry;
@@ -110,12 +174,15 @@ export const registerUser = asyncHandler(async (req, res) => {
         });
     }
 
-    // 5. Push OTP email job to BullMQ queue (Non-blocking, responds in <50ms!)
-    await emailQueue.add("send-verification-otp", {
-        email: user.email,
-        type: "verification_otp",
-        data: { otp: verificationOtp },
-    });
+    // 5. Send OTP email (BullMQ queue or direct Resend fallback)
+    await dispatchOtpEmail(user.email, verificationOtp, "verification_otp");
+
+    // Dev mode OTP console print for effortless Postman testing
+    if (process.env.NODE_ENV !== "production") {
+        console.log(`\n==================================================`);
+        console.log(`🔑 [DEV MODE OTP for ${user.email}]: ${verificationOtp}`);
+        console.log(`==================================================\n`);
+    }
 
     return res.status(201).json(
         new APIResponse(
@@ -137,7 +204,7 @@ export const registerUser = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const verifyEmailOtp = asyncHandler(async (req, res) => {
-    const { email, otp } = req.body;
+    const { email, otp } = req.body || {};
 
     if (!email || !otp) {
         throw new ApiError(400, "Email and OTP are required.");
@@ -197,7 +264,7 @@ export const verifyEmailOtp = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const resendVerificationOtp = asyncHandler(async (req, res) => {
-    const { email } = req.body;
+    const { email } = req.body || {};
 
     if (!email) {
         throw new ApiError(400, "Email is required.");
@@ -218,12 +285,14 @@ export const resendVerificationOtp = asyncHandler(async (req, res) => {
     user.verificationOtpExpiry = new Date(Date.now() + 10 * 60 * 1000);
     await user.save({ validateBeforeSave: false });
 
-    // Queue email via BullMQ
-    await emailQueue.add("send-verification-otp", {
-        email: user.email,
-        type: "verification_otp",
-        data: { otp: verificationOtp },
-    });
+    // Queue email via BullMQ or direct Resend fallback
+    await dispatchOtpEmail(user.email, verificationOtp, "verification_otp");
+
+    if (process.env.NODE_ENV !== "production") {
+        console.log(`\n==================================================`);
+        console.log(`🔑 [DEV MODE RESEND OTP for ${user.email}]: ${verificationOtp}`);
+        console.log(`==================================================\n`);
+    }
 
     return res.status(200).json(
         new APIResponse(200, {}, "A fresh verification OTP has been sent to your email.")
@@ -236,7 +305,7 @@ export const resendVerificationOtp = asyncHandler(async (req, res) => {
  * @access  Public
  */
 export const loginUser = asyncHandler(async (req, res) => {
-    const { email, username, password } = req.body;
+    const { email, username, password } = req.body || {};
 
     if ((!email && !username) || !password) {
         throw new ApiError(400, "Email or Username and Password are required.");
@@ -381,12 +450,14 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     user.forgotPasswordOtpExpiry = new Date(Date.now() + 10 * 60 * 1000);
     await user.save({ validateBeforeSave: false });
 
-    // Queue email via BullMQ
-    await emailQueue.add("send-forgot-password-otp", {
-        email: user.email,
-        type: "forgot_password_otp",
-        data: { otp: forgotPasswordOtp },
-    });
+    // Queue email via BullMQ or direct Resend fallback
+    await dispatchOtpEmail(user.email, forgotPasswordOtp, "forgot_password_otp");
+
+    if (process.env.NODE_ENV !== "production") {
+        console.log(`\n==================================================`);
+        console.log(`🔑 [DEV MODE FORGOT PASSWORD OTP for ${user.email}]: ${forgotPasswordOtp}`);
+        console.log(`==================================================\n`);
+    }
 
     return res
         .status(200)
