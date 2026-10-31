@@ -10,6 +10,7 @@ import {
   Volume2,
   VolumeX,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import { SchemeSummary } from "@/types/scheme";
 import { Card } from "@/components/ui/Card";
@@ -211,6 +212,15 @@ export const SchemeCard: React.FC<SchemeCardProps> = ({ scheme }) => {
               <Volume2 className="h-4 w-4" />
             )}
           </button>
+
+          <Link
+            to={`/civic-assistant?schemeTitle=${encodeURIComponent(scheme.title)}&autoSend=1`}
+            className="p-1.5 text-mustard-dark hover:text-vermilion hover:bg-amber-50 rounded transition-colors"
+            title={`Ask AI to explain ${scheme.title}`}
+            aria-label={`Ask AI about ${scheme.title}`}
+          >
+            <Sparkles className="h-4 w-4" />
+          </Link>
 
           {scheme.officialPortalUrl && (
             <a

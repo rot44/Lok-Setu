@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   MessageSquare,
   Send,
@@ -11,6 +12,7 @@ import {
   AlertTriangle,
   FileText,
   HelpCircle,
+  X,
 } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { Button } from "@/components/ui/Button";
@@ -20,6 +22,7 @@ import {
   getStoredSessionId,
   clearStoredSession,
 } from "@/services/assistant.service";
+import { buildSchemeExplanationPrompt } from "@/utils/aiPrompt";
 
 const SUGGESTED_QUERIES = [
   {
@@ -42,12 +45,15 @@ const SUGGESTED_QUERIES = [
 
 export const CivicAssistant: React.FC = () => {
   const { language, t } = useLanguage();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(() => getStoredSessionId());
+  const [activeSchemeBadge, setActiveSchemeBadge] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const autoPromptTriggered = useRef(false);
 
   // Scroll to bottom on new messages
   const scrollToBottom = () => {
@@ -86,53 +92,90 @@ export const CivicAssistant: React.FC = () => {
     };
   }, []);
 
-  const handleSend = async (queryText?: string) => {
-    const textToSend = (queryText || inputText).trim();
-    if (!textToSend || loading) return;
+  const handleSend = useCallback(
+    async (queryText?: string) => {
+      const textToSend = (queryText || inputText).trim();
+      if (!textToSend || loading) return;
 
-    setError(null);
-    setLoading(true);
+      setError(null);
+      setLoading(true);
 
-    // Optimistically add user message to UI
-    const optimisticUserMessage: AssistantMessage = {
-      id: `user-${Date.now()}`,
-      sender: "user",
-      text: textToSend,
-      languageUsed: language,
-      timestamp: new Date().toISOString(),
-    };
+      // Optimistically add user message to UI
+      const optimisticUserMessage: AssistantMessage = {
+        id: `user-${Date.now()}`,
+        sender: "user",
+        text: textToSend,
+        languageUsed: language,
+        timestamp: new Date().toISOString(),
+      };
 
-    setMessages((prev) => [...prev, optimisticUserMessage]);
-    if (!queryText) {
-      setInputText(""); // Clear input when explicitly typing
-    }
-
-    try {
-      const response = await assistantService.sendMessage({
-        query: textToSend,
-        language,
-        sessionId: sessionId || undefined,
-      });
-
-      if (response.sessionId) {
-        setSessionId(response.sessionId);
-      }
-
-      setMessages((prev) => [...prev, response.message]);
-    } catch (err: unknown) {
-      const errorMsg =
-        err instanceof Error ? err.message : "Failed to generate answer. Please try again.";
-      setError(errorMsg);
-      // Restore user text if it failed so they can retry without retyping
+      setMessages((prev) => [...prev, optimisticUserMessage]);
       if (!queryText) {
-        setInputText(textToSend);
+        setInputText(""); // Clear input when explicitly typing
       }
-      // Remove optimistic message on failure
-      setMessages((prev) => prev.filter((m) => m.id !== optimisticUserMessage.id));
-    } finally {
-      setLoading(false);
+
+      try {
+        const response = await assistantService.sendMessage({
+          query: textToSend,
+          language,
+          sessionId: sessionId || undefined,
+        });
+
+        if (response.sessionId) {
+          setSessionId(response.sessionId);
+        }
+
+        setMessages((prev) => [...prev, response.message]);
+      } catch (err: unknown) {
+        const errorMsg =
+          err instanceof Error ? err.message : "Failed to generate answer. Please try again.";
+        setError(errorMsg);
+        // Restore user text if it failed so they can retry without retyping
+        if (!queryText) {
+          setInputText(textToSend);
+        }
+        // Remove optimistic message on failure
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticUserMessage.id));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [inputText, loading, language, sessionId]
+  );
+
+  // Auto-prompt handler when arriving with a specific scheme or query from Explore/Scheme Details
+  useEffect(() => {
+    const schemeTitle = searchParams.get("schemeTitle");
+    const incomingQuery = searchParams.get("query");
+    const autoSend =
+      searchParams.get("autoSend") === "1" || searchParams.get("autoSend") === "true";
+
+    if ((schemeTitle || incomingQuery) && !autoPromptTriggered.current) {
+      autoPromptTriggered.current = true;
+      const targetTitle = schemeTitle ? decodeURIComponent(schemeTitle) : "";
+      const generatedPrompt = incomingQuery
+        ? decodeURIComponent(incomingQuery)
+        : buildSchemeExplanationPrompt(targetTitle, language);
+
+      if (targetTitle) {
+        setActiveSchemeBadge(targetTitle);
+      }
+
+      // Clean URL params quietly so back/reload does not resend
+      const cleanParams = new URLSearchParams(searchParams);
+      cleanParams.delete("schemeTitle");
+      cleanParams.delete("query");
+      cleanParams.delete("autoSend");
+      cleanParams.delete("schemeId");
+      setSearchParams(cleanParams, { replace: true });
+
+      if (autoSend) {
+        handleSend(generatedPrompt);
+      } else {
+        setInputText(generatedPrompt);
+      }
     }
-  };
+  }, [searchParams, language, setSearchParams, handleSend]);
 
   const handleResetSession = () => {
     clearStoredSession();
@@ -186,6 +229,26 @@ export const CivicAssistant: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Active Scheme Context Banner */}
+      {activeSchemeBadge && (
+        <div className="px-5 py-2.5 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-mustard/30 flex items-center justify-between text-xs text-neel animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-vermilion shrink-0" />
+            <span>
+              Explaining Scheme: <strong className="font-semibold text-neel">{activeSchemeBadge}</strong>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveSchemeBadge(null)}
+            className="text-neel-muted hover:text-vermilion p-1 transition-colors"
+            title="Dismiss badge"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 bg-paper/20">

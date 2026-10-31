@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { translations, SUPPORTED_LANGUAGES } from "../src/translations/index.ts";
+import { buildSchemeExplanationPrompt } from "../src/utils/aiPrompt.ts";
 
 test("Lok-Setu Civic Assistant Contracts & State Machine", async (t) => {
   const EXACT_MISSING_INFO = "This document does not clearly specify this information.";
@@ -148,5 +149,27 @@ test("Lok-Setu Civic Assistant Contracts & State Machine", async (t) => {
       assert.ok(dict["nav.assistant"], `nav.assistant must be defined for ${lang.code}`);
       assert.ok(dict["common.disclaimer"], `common.disclaimer must be defined for ${lang.code}`);
     }
+  });
+
+  await t.test("buildSchemeExplanationPrompt generates localized queries for all supported languages", () => {
+    const title = "PM-Kisan Samman Nidhi";
+    const hiPrompt = buildSchemeExplanationPrompt(title, "hi");
+    assert.ok(hiPrompt.includes("PM-Kisan Samman Nidhi"));
+    assert.ok(hiPrompt.includes("योजना के बारे में"));
+
+    const enPrompt = buildSchemeExplanationPrompt(title, "en");
+    assert.ok(enPrompt.includes("Please explain the 'PM-Kisan Samman Nidhi' scheme"));
+
+    const bnPrompt = buildSchemeExplanationPrompt(title, "bn");
+    assert.ok(bnPrompt.includes("প্রকল্প"));
+
+    const mrPrompt = buildSchemeExplanationPrompt(title, "mr");
+    assert.ok(mrPrompt.includes("योजनेबद्दल"));
+
+    const taPrompt = buildSchemeExplanationPrompt(title, "ta");
+    assert.ok(taPrompt.includes("திட்டம்"));
+
+    const guPrompt = buildSchemeExplanationPrompt(title, "gu");
+    assert.ok(guPrompt.includes("યોજના"));
   });
 });

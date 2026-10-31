@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   Building2,
   Calendar,
@@ -18,6 +18,7 @@ import {
   FileCheck,
   Share2,
   HelpCircle,
+  Sparkles,
 } from "lucide-react";
 import { schemeService } from "@/services/scheme.service";
 import { SchemeDetailResponseData, SchemeExplainer } from "@/types/scheme";
@@ -33,6 +34,7 @@ const NOT_SPECIFIED = "This document does not clearly specify this information."
 
 export const SchemeDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { language } = useLanguage();
 
   const [data, setData] = useState<SchemeDetailResponseData | null>(null);
@@ -221,6 +223,20 @@ export const SchemeDetailPage: React.FC = () => {
 
         <div className="flex items-center gap-2">
           <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              navigate(
+                `/civic-assistant?schemeTitle=${encodeURIComponent(scheme.title)}&autoSend=1`
+              );
+            }}
+            leftIcon={<Sparkles className="h-3.5 w-3.5 text-mustard-dark" />}
+            className="border-mustard/60 bg-amber-50/60 text-neel hover:bg-mustard/20 font-semibold"
+          >
+            Ask with AI
+          </Button>
+
+          <Button
             variant="ghost"
             size="sm"
             onClick={handleShare}
@@ -406,6 +422,35 @@ export const SchemeDetailPage: React.FC = () => {
               </div>
             </Card>
           )}
+
+          {/* Interactive Multilingual AI Assistant Callout */}
+          <div className="p-4 sm:p-5 rounded-lg bg-gradient-to-r from-amber-50/90 via-orange-50/80 to-amber-50/90 border border-mustard/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-full bg-vermilion text-white shrink-0 shadow-xs">
+                <Sparkles className="h-5 w-5" />
+              </div>
+              <div className="space-y-0.5">
+                <div className="text-sm font-bold text-neel font-serif">
+                  Have questions about {scheme.title}?
+                </div>
+                <div className="text-xs text-neel-muted leading-relaxed">
+                  Ask our AI Civic Assistant to explain eligibility criteria, mandatory documents, or application steps in your preferred language.
+                </div>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => {
+                navigate(
+                  `/civic-assistant?schemeTitle=${encodeURIComponent(scheme.title)}&autoSend=1`
+                );
+              }}
+              className="shrink-0 bg-neel hover:bg-neel-dark text-white text-xs font-semibold shadow-xs"
+              leftIcon={<Sparkles className="h-3.5 w-3.5 text-mustard" />}
+            >
+              Ask AI in your Language
+            </Button>
+          </div>
 
           {/* Key Citizen Rights & Benefits */}
           <Card accent="mustard" className="space-y-4">
