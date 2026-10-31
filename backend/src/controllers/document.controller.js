@@ -1,6 +1,7 @@
 import { Document } from "../models/document.model.js";
 import { ingestionService } from "../services/ingestion.service.js";
 import { syncLatestPibReleases } from "../services/pibWatcher.service.js";
+import { governmentSyncService } from "../services/governmentSync.service.js";
 import { ApiError } from "../utils/apiError.js";
 import { APIResponse } from "../utils/apiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -119,6 +120,29 @@ export const triggerPibSync = asyncHandler(async (req, res) => {
             200,
             result,
             `Processed ${result.totalInspected} PIB releases. ${result.syncedCount} new documents ingested.`
+        )
+    );
+});
+
+/**
+ * @desc    Trigger autonomous multi-state and multi-category government scheme synchronization
+ * @route   POST /api/v1/documents/auto-sync-all
+ * @access  Private (Admin / Official)
+ */
+export const triggerAutonomousGovSync = asyncHandler(async (req, res) => {
+    const { includeLivePib = true, bureauCodes, limitPerBureau = 2 } = req.body;
+
+    const stats = await governmentSyncService.runFullAutonomousSync({
+        includeLivePib,
+        bureauCodes,
+        limitPerBureau: parseInt(limitPerBureau, 10) || 2,
+    });
+
+    return res.status(200).json(
+        new APIResponse(
+            200,
+            stats,
+            `Autonomous sync complete. Synced ${stats.totalNewDocumentsSynced} new policies across central and state tiers.`
         )
     );
 });

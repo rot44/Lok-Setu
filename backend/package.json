@@ -14,8 +14,10 @@
     "seed:multitier": "node src/scripts/seedStateAndMunicipalPolicies.js",
     "seed:full": "node src/scripts/seedFullGovCatalog.js",
     "sync:pib": "node src/scripts/syncPibNotifications.js",
+    "sync:gov": "node src/scripts/runGovSync.js",
+    "worker:gov": "node src/workers/governmentSync.worker.js",
     "test:e2e": "node src/scripts/verifyFullBuildE2E.js",
-    "test": "node --test test/sarvam.test.js && node --test test/eligibility.test.js && node --test test/notice-analysis.test.js && node --test test/assistant.test.js && node --test test/civic-analysis.test.js && node --test test/ingestion.test.js && node --test test/rag-retrieval.test.js && node --test test/rag-indexing.test.js && node --test test/pib-watcher.test.js && node test/config.test.js"
+    "test": "node --test test/sarvam.test.js && node --test test/eligibility.test.js && node --test test/notice-analysis.test.js && node --test test/assistant.test.js && node --test test/civic-analysis.test.js && node --test test/ingestion.test.js && node --test test/rag-retrieval.test.js && node --test test/rag-indexing.test.js && node --test test/pib-watcher.test.js && node --test test/government-sync.test.js && node test/config.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",
