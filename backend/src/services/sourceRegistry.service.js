@@ -35,7 +35,24 @@ export const SYNC_STATUSES = Object.freeze({
 });
 
 /**
+ * Canonical 28 Indian States (2-letter codes).
+ */
+export const CANONICAL_INDIAN_STATES = Object.freeze([
+    "AP", "AR", "AS", "BR", "CG", "GA", "GJ", "HR", "HP", "JH",
+    "KA", "KL", "MP", "MH", "MN", "ML", "MZ", "NL", "OD", "PB",
+    "RJ", "SK", "TN", "TG", "TR", "UP", "UK", "WB",
+]);
+
+/**
+ * Canonical 8 Union Territories (2-letter codes).
+ */
+export const CANONICAL_UNION_TERRITORIES = Object.freeze([
+    "AN", "CH", "DN", "DL", "JK", "LA", "LD", "PY",
+]);
+
+/**
  * Recognized Indian State and Union Territory 2-letter postal/ISO codes, plus 'ALL' for central/national.
+ * Includes canonical codes and recognized statutory aliases (e.g. CT for CG, OR for OD, TS for TG, UT for UK, DH for DN).
  */
 export const VALID_INDIAN_STATE_CODES = Object.freeze(
     new Set([
@@ -484,6 +501,59 @@ export class GovernmentSourceRegistry {
     }
 
     /**
+     * Generates a detailed state-by-state coverage breakdown across all 28 states and 8 union territories.
+     *
+     * @returns {Object} State and UT coverage summary
+     */
+    getStateCoverageSummary() {
+        const canonicalUnits = [...CANONICAL_INDIAN_STATES, ...CANONICAL_UNION_TERRITORIES];
+        const allSources = this.getAllSources();
+        const breakdown = {};
+
+        for (const code of canonicalUnits) {
+            breakdown[code] = {
+                stateCode: code,
+                isUnionTerritory: CANONICAL_UNION_TERRITORIES.includes(code),
+                sourcesCount: 0,
+                activeCount: 0,
+                urlVerifiedCount: 0,
+                sources: [],
+            };
+        }
+
+        for (const src of allSources) {
+            if (src.stateCode && breakdown[src.stateCode]) {
+                breakdown[src.stateCode].sourcesCount++;
+                if (src.isEnabled) breakdown[src.stateCode].activeCount++;
+                if (src.coverageStatus === SOURCE_LIFECYCLE_STAGES.URL_VERIFIED) {
+                    breakdown[src.stateCode].urlVerifiedCount++;
+                }
+                breakdown[src.stateCode].sources.push({
+                    id: src.id,
+                    name: src.name,
+                    jurisdictionLevel: src.jurisdictionLevel,
+                    connectorType: src.connectorType,
+                    officialSourceUrl: src.officialSourceUrl,
+                    coverageStatus: src.coverageStatus,
+                    isEnabled: src.isEnabled,
+                });
+            }
+        }
+
+        const coveredStateCodes = canonicalUnits.filter((c) => breakdown[c].sourcesCount > 0);
+        const uncoveredStateCodes = canonicalUnits.filter((c) => breakdown[c].sourcesCount === 0);
+
+        return {
+            totalUnits: canonicalUnits.length,
+            coveredCount: coveredStateCodes.length,
+            uncoveredCount: uncoveredStateCodes.length,
+            coveredStateCodes,
+            uncoveredStateCodes,
+            breakdown,
+        };
+    }
+
+    /**
      * Generates a comprehensive source coverage inventory report across all tiers and lifecycle stages.
      *
      * @returns {Object} Coverage inventory breakdown
@@ -561,6 +631,7 @@ export class GovernmentSourceRegistry {
             byConnector,
             bySyncStatus,
             stateCoverage,
+            stateCoverageSummary: this.getStateCoverageSummary(),
             generatedAt: new Date().toISOString(),
         };
     }
@@ -575,14 +646,21 @@ export class GovernmentSourceRegistry {
 
 /**
  * Verified Baseline Government Sources.
- * Includes the 20 active regional bureaus of the Press Information Bureau (PIB)
- * plus authentic discovered/URL-verified state gazette and municipal portals.
  *
- * All URLs are authentic government endpoints. Non-PIB sources are tracked
- * accurately in their current lifecycle stage ('url_verified').
+ * Structure:
+ * 1. Central & Regional Press Information Bureau (PIB) RSS feeds (20 bureaus: 1 Central + 19 Regional)
+ * 2. Verified State Gazette and Policy Portals (28 States)
+ * 3. Verified Union Territory Gazette and Administration Portals (8 UTs)
+ * 4. Verified Municipal Corporation Portals (2 Urban Local Bodies)
+ *
+ * All URLs are authentic, verified government endpoints.
+ * State & UT gazette/portal sources without active connector parsers are tracked
+ * accurately in their current lifecycle stage ('url_verified') with isEnabled: false.
  */
 export const VERIFIED_BASELINE_GOVERNMENT_SOURCES = Object.freeze([
-    // ─── CENTRAL & REGIONAL PRESS INFORMATION BUREAU (PIB) FEEDS ────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    // 1. CENTRAL & REGIONAL PRESS INFORMATION BUREAU (PIB) FEEDS (20 BUREAUS)
+    // ══════════════════════════════════════════════════════════════════════════
     {
         id: "pib_central_all_india",
         name: "PIB New Delhi (Central All-India)",
@@ -864,20 +942,148 @@ export const VERIFIED_BASELINE_GOVERNMENT_SOURCES = Object.freeze([
         description: "Official releases and policy notifications for Goa.",
     },
 
-    // ─── AUTHENTIC DISCOVERED STATE GAZETTE & MUNICIPAL SOURCES ─────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    // 2. VERIFIED STATE GOVERNMENT GAZETTE & POLICY PORTALS (28 STATES)
+    // ══════════════════════════════════════════════════════════════════════════
     {
-        id: "maha_egazette_portal",
-        name: "Maharashtra Government e-Gazette",
+        id: "ap_goir_portal",
+        name: "Andhra Pradesh Government Orders Issue Register (GOIR)",
         jurisdictionLevel: JURISDICTION_LEVELS.STATE,
-        stateCode: "MH",
-        department: "Directorate of Government Printing and Stationery, Maharashtra",
+        stateCode: "AP",
+        department: "General Administration Department, Government of Andhra Pradesh",
         connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
-        officialSourceUrl: "https://egazette.mahaonline.gov.in",
-        officialDomain: "mahaonline.gov.in",
+        officialSourceUrl: "https://goir.ap.gov.in",
+        officialDomain: "ap.gov.in",
         isEnabled: false,
         pollingIntervalHours: 12,
         coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
-        description: "Official statutory gazette notifications and government resolutions of Maharashtra.",
+        description: "Official digital repository of Government Orders (GOs), statutory notifications, and administrative circulars for Andhra Pradesh.",
+    },
+    {
+        id: "arunachal_printing_gazette",
+        name: "Arunachal Pradesh Gazette & Notifications Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "AR",
+        department: "Directorate of Printing & Stationery, Government of Arunachal Pradesh",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://printing.arunachal.gov.in",
+        officialDomain: "arunachal.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official gazette publications, statutory rules, acts, and departmental notifications for Arunachal Pradesh.",
+    },
+    {
+        id: "assam_gazette_portal",
+        name: "Assam State Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "AS",
+        department: "Directorate of Printing and Stationery, Government of Assam",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://dpns.assam.gov.in",
+        officialDomain: "assam.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official state gazette notifications, government circulars, and executive orders for Assam.",
+    },
+    {
+        id: "bihar_egazette_portal",
+        name: "Bihar e-Gazette Official Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "BR",
+        department: "Finance Department / Bihar Secretariat Press, Government of Bihar",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://egazette.bihar.gov.in",
+        officialDomain: "bihar.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official digital repository of ordinary and extraordinary gazettes, welfare notifications, and statutory regulations of Bihar.",
+    },
+    {
+        id: "chhattisgarh_egazette_portal",
+        name: "Chhattisgarh e-Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "CG",
+        department: "Government Printing Press, Government of Chhattisgarh",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://egazette.cg.nic.in",
+        officialDomain: "cg.nic.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Digital notifications, state government gazette publications, and administrative statutory orders for Chhattisgarh.",
+    },
+    {
+        id: "goa_printing_gazette",
+        name: "Goa Government Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "GA",
+        department: "Department of Printing and Stationery, Government of Goa",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://goaprintingpress.gov.in",
+        officialDomain: "goaprintingpress.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official state gazette (Series I, II, III), extraordinary notifications, acts, and statutory rules for Goa.",
+    },
+    {
+        id: "gujarat_egazette_portal",
+        name: "Gujarat e-Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "GJ",
+        department: "Directorate of Government Printing & Stationery, Government of Gujarat",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://egazette.gujarat.gov.in",
+        officialDomain: "gujarat.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official digital publication portal for Gujarat state gazettes, statutory notifications, and government resolutions.",
+    },
+    {
+        id: "haryana_csoffice_portal",
+        name: "Haryana Government Orders & Notifications Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "HR",
+        department: "Office of Chief Secretary, Government of Haryana",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://csharyana.gov.in",
+        officialDomain: "csharyana.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official state government orders, administrative instructions, circulars, and policy guidelines of Haryana.",
+    },
+    {
+        id: "hp_rajpatra_portal",
+        name: "Himachal Pradesh Rajpatra (e-Gazette)",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "HP",
+        department: "Department of Printing and Stationery, Government of Himachal Pradesh",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://rajpatra.hp.gov.in",
+        officialDomain: "hp.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Digitally signed notifications, acts, rules, and statutory orders of Himachal Pradesh.",
+    },
+    {
+        id: "jharkhand_egazette_portal",
+        name: "Jharkhand e-Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "JH",
+        department: "Directorate of Printing and Stationery, Government of Jharkhand",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://egazette.jharkhand.gov.in",
+        officialDomain: "jharkhand.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official weekly ordinary and extraordinary government gazette publications of Jharkhand.",
     },
     {
         id: "karnataka_gazette_portal",
@@ -893,6 +1099,364 @@ export const VERIFIED_BASELINE_GOVERNMENT_SOURCES = Object.freeze([
         coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
         description: "Official government gazette releases and statutory notifications for Karnataka.",
     },
+    {
+        id: "kerala_egazette_portal",
+        name: "Kerala State e-Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "KL",
+        department: "Department of Printing, Government of Kerala",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://gazette.kerala.gov.in",
+        officialDomain: "kerala.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official gazette notifications, statutory rules, orders, and welfare policies of the Government of Kerala.",
+    },
+    {
+        id: "mp_govtpress_portal",
+        name: "Madhya Pradesh Government Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "MP",
+        department: "Controller, Government Central Press, Madhya Pradesh",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "http://govtpressmp.nic.in",
+        officialDomain: "govtpressmp.nic.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official government gazette, statutory announcements, circulars, and extraordinary publications for Madhya Pradesh.",
+    },
+    {
+        id: "maha_egazette_portal",
+        name: "Maharashtra Government e-Gazette",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "MH",
+        department: "Directorate of Government Printing and Stationery, Maharashtra",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://egazette.mahaonline.gov.in",
+        officialDomain: "mahaonline.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official statutory gazette notifications and government resolutions of Maharashtra.",
+    },
+    {
+        id: "manipur_egazette_portal",
+        name: "Manipur e-Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "MN",
+        department: "Directorate of Printing & Stationery, Government of Manipur",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://egazettemanipur.mn.gov.in",
+        officialDomain: "mn.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Digitally signed notifications, ordinary and extraordinary gazette publications of Manipur.",
+    },
+    {
+        id: "meghalaya_gazette_portal",
+        name: "Meghalaya Government Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "ML",
+        department: "Directorate of Printing and Stationery, Government of Meghalaya",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://megpns.gov.in",
+        officialDomain: "megpns.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official gazette notifications, state acts, rules, and public notices of Meghalaya.",
+    },
+    {
+        id: "mizoram_egazette_portal",
+        name: "Mizoram e-Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "MZ",
+        department: "Directorate of Printing & Stationery, Government of Mizoram",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://egazette.mizoram.gov.in",
+        officialDomain: "mizoram.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Digital repository of ordinary and extraordinary gazette notifications and regulations for Mizoram.",
+    },
+    {
+        id: "nagaland_govtpress_portal",
+        name: "Nagaland Official Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "NL",
+        department: "Directorate of Printing & Stationery, Government of Nagaland",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://govtpress.nagaland.gov.in",
+        officialDomain: "nagaland.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official gazette publications, statutory rules, orders, and public notices of Nagaland.",
+    },
+    {
+        id: "odisha_egazette_portal",
+        name: "Odisha e-Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "OD",
+        department: "Directorate of Printing, Stationery & Publication, Government of Odisha",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://egazette.odisha.gov.in",
+        officialDomain: "odisha.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Authorized electronic gazette notifications, statutory orders, and state welfare policies of Odisha.",
+    },
+    {
+        id: "punjab_state_portal",
+        name: "Punjab Government Official Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "PB",
+        department: "Department of Information and Public Relations, Government of Punjab",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://punjab.gov.in",
+        officialDomain: "punjab.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official portal for state cabinet decisions, departmental notifications, citizen circulars, and policy announcements of Punjab.",
+    },
+    {
+        id: "rajasthan_state_portal",
+        name: "Rajasthan Government Official Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "RJ",
+        department: "Department of Information Technology & Communication, Government of Rajasthan",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://rajasthan.gov.in",
+        officialDomain: "rajasthan.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "State portal for public notifications, department orders, welfare schemes, and civic policies of Rajasthan.",
+    },
+    {
+        id: "sikkim_state_gazette",
+        name: "Sikkim Government Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "SK",
+        department: "Information & Public Relations Department, Government of Sikkim",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://www.sikkim.gov.in",
+        officialDomain: "sikkim.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official gazette repository for State Acts, statutory rules, ordinary and extraordinary notifications of Sikkim.",
+    },
+    {
+        id: "tn_stationery_printing_gazette",
+        name: "Tamil Nadu Government Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "TN",
+        department: "Department of Stationery and Printing, Government of Tamil Nadu",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "http://www.stationeryprinting.tn.gov.in",
+        officialDomain: "stationeryprinting.tn.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official weekly issues and extraordinary gazettes, statutory rules, and government notifications of Tamil Nadu.",
+    },
+    {
+        id: "telangana_go_portal",
+        name: "Telangana Government Orders (GO) Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "TG",
+        department: "General Administration Department, Government of Telangana",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://go.telangana.gov.in",
+        officialDomain: "telangana.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official repository of Government Orders, administrative notifications, and policy directives of Telangana.",
+    },
+    {
+        id: "tripura_gazette_portal",
+        name: "Tripura Gazette Official Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "TR",
+        department: "General Administration (Printing and Stationery) Department, Government of Tripura",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://tripuragazette.nic.in",
+        officialDomain: "tripuragazette.nic.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official state gazette notifications, statutory acts, rules, and extraordinary issues of Tripura.",
+    },
+    {
+        id: "up_shasanadesh_portal",
+        name: "Uttar Pradesh Shasanadesh Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "UP",
+        department: "Secretariat Administration Department, Government of Uttar Pradesh",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://shasanadesh.up.gov.in",
+        officialDomain: "up.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Primary official repository of state government orders (shasanadesh), circulars, resolutions, and departmental notifications for Uttar Pradesh.",
+    },
+    {
+        id: "uttarakhand_gazette_portal",
+        name: "Uttarakhand e-Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "UK",
+        department: "Government Printing Press, Roorkee / Government of Uttarakhand",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://www.gazettes.uk.gov.in",
+        officialDomain: "uk.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official e-gazette portal for statutory notifications, executive orders, and regulations of Uttarakhand.",
+    },
+    {
+        id: "wb_state_portal",
+        name: "West Bengal Government Official Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "WB",
+        department: "Information & Cultural Affairs Department, Government of West Bengal",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://wb.gov.in",
+        officialDomain: "wb.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Central state portal for official notifications, departmental memorandums, circulars, and civic welfare announcements of West Bengal.",
+    },
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 3. VERIFIED UNION TERRITORY GAZETTE & POLICY PORTALS (8 UTS)
+    // ══════════════════════════════════════════════════════════════════════════
+    {
+        id: "andaman_admin_portal",
+        name: "Andaman & Nicobar Administration Official Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "AN",
+        department: "Andaman and Nicobar Administration",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://andamannicobar.gov.in",
+        officialDomain: "andamannicobar.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official portal for administrative orders, circulars, regulations, and extraordinary gazette notifications of Andaman and Nicobar.",
+    },
+    {
+        id: "chandigarh_egazette_portal",
+        name: "Chandigarh UT e-Gazette (Rajpatra) Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "CH",
+        department: "Department of Printing and Stationery, UT Chandigarh",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://egazette.chd.gov.in",
+        officialDomain: "chd.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official digital gazette for administrative rules, statutory orders, and public notices of Chandigarh.",
+    },
+    {
+        id: "dnh_dd_admin_portal",
+        name: "Dadra & Nagar Haveli and Daman & Diu Official Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "DN",
+        department: "Administration of Dadra and Nagar Haveli and Daman and Diu",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://daman.nic.in",
+        officialDomain: "daman.nic.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official administration portal publishing gazettes, statutory notices, rules, and departmental circulars of DNH and DD.",
+    },
+    {
+        id: "delhi_state_portal",
+        name: "Government of NCT of Delhi Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "DL",
+        department: "Information Technology Department, Government of NCT of Delhi",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://delhi.gov.in",
+        officialDomain: "delhi.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official portal for GNCTD e-gazettes, cabinet decisions, Delhi Dastavez document repository, and policy notifications.",
+    },
+    {
+        id: "jk_gad_orders_portal",
+        name: "Jammu & Kashmir GAD Orders & Notifications Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "JK",
+        department: "General Administration Department, Government of Jammu and Kashmir",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://jkgad.nic.in",
+        officialDomain: "jkgad.nic.in",
+        isEnabled: false,
+        pollingIntervalHours: 12,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official repository of Government Orders, Statutory Regulatory Orders (SROs/SOs), circulars, and notifications for J&K.",
+    },
+    {
+        id: "ladakh_egazette_portal",
+        name: "Ladakh UT e-Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "LA",
+        department: "Administration of Union Territory of Ladakh",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://egazette.ladakh.gov.in",
+        officialDomain: "ladakh.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official e-gazette publishing Extra Ordinary Gazettes, statutory rules, and administrative circulars of UT Ladakh.",
+    },
+    {
+        id: "lakshadweep_admin_portal",
+        name: "Lakshadweep UT Administration Official Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "LD",
+        department: "Administration of Union Territory of Lakshadweep",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://lakshadweep.gov.in",
+        officialDomain: "lakshadweep.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official administration portal publishing the Lakshadweep Gazette, departmental notifications, and statutory rules.",
+    },
+    {
+        id: "puducherry_printing_gazette",
+        name: "Puducherry Official Gazette Portal",
+        jurisdictionLevel: JURISDICTION_LEVELS.STATE,
+        stateCode: "PY",
+        department: "Directorate of Stationery and Printing, Government of Puducherry",
+        connectorType: CONNECTOR_TYPES.PORTAL_SCRAPER,
+        officialSourceUrl: "https://styandptg.py.gov.in",
+        officialDomain: "py.gov.in",
+        isEnabled: false,
+        pollingIntervalHours: 24,
+        coverageStatus: SOURCE_LIFECYCLE_STAGES.URL_VERIFIED,
+        description: "Official ordinary and extraordinary gazette publications, statutory rules, acts, and notifications for Puducherry.",
+    },
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // 4. VERIFIED MUNICIPAL CORPORATION PORTALS (URBAN LOCAL BODIES)
+    // ══════════════════════════════════════════════════════════════════════════
     {
         id: "mcd_delhi_notices",
         name: "Municipal Corporation of Delhi (MCD) Public Circulars",
@@ -940,4 +1504,3 @@ export function createDefaultSourceRegistry() {
  * Singleton instance of the GovernmentSourceRegistry initialized with baseline sources.
  */
 export const governmentSourceRegistry = createDefaultSourceRegistry();
-

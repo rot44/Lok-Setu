@@ -4,6 +4,8 @@ import {
     CONNECTOR_TYPES,
     SOURCE_LIFECYCLE_STAGES,
     SYNC_STATUSES,
+    CANONICAL_INDIAN_STATES,
+    CANONICAL_UNION_TERRITORIES,
     SourceValidationError,
     validateSourceUrl,
     validateSourceDefinition,
@@ -491,9 +493,9 @@ describe("Government Source Registry Suite", () => {
     });
 
     describe("7. Baseline Government Source Inventory Verification", () => {
-        it("verifies the default singleton registry contains at least 24 verified sources", () => {
+        it("verifies the default singleton registry contains all 58 verified government sources", () => {
             const allSources = governmentSourceRegistry.getAllSources();
-            assert.ok(allSources.length >= 24, `Expected at least 24 sources, found ${allSources.length}`);
+            assert.equal(allSources.length, 58, `Expected exactly 58 sources, found ${allSources.length}`);
         });
 
         it("verifies all 20 Regional PIB Bureaus are registered with authentic URLs and domains", () => {
@@ -521,12 +523,74 @@ describe("Government Source Registry Suite", () => {
             }
         });
 
+        it("verifies all 28 Indian States have at least one verified official government source", () => {
+            const inventory = governmentSourceRegistry.getCoverageInventory();
+            const summary = inventory.stateCoverageSummary;
+
+            assert.equal(CANONICAL_INDIAN_STATES.length, 28);
+            for (const stateCode of CANONICAL_INDIAN_STATES) {
+                const entry = summary.breakdown[stateCode];
+                assert.ok(entry, `Missing breakdown entry for state ${stateCode}`);
+                assert.ok(entry.sourcesCount >= 1, `State ${stateCode} has 0 sources registered`);
+                assert.ok(entry.sources.length >= 1);
+                
+                // Verify that every state has a dedicated state policy/gazette portal in url_verified stage
+                const stateGazetteOrPortal = entry.sources.find(
+                    (s) => s.connectorType === CONNECTOR_TYPES.PORTAL_SCRAPER
+                );
+                assert.ok(stateGazetteOrPortal, `State ${stateCode} is missing a dedicated state portal source`);
+                assert.equal(stateGazetteOrPortal.coverageStatus, SOURCE_LIFECYCLE_STAGES.URL_VERIFIED);
+                assert.equal(stateGazetteOrPortal.isEnabled, false);
+
+                // Verify each source for this state has an authentic URL and domain
+                for (const src of entry.sources) {
+                    assert.ok(src.officialSourceUrl.startsWith("http://") || src.officialSourceUrl.startsWith("https://"));
+                    assert.ok([SOURCE_LIFECYCLE_STAGES.CONFIGURED, SOURCE_LIFECYCLE_STAGES.URL_VERIFIED].includes(src.coverageStatus));
+                }
+            }
+        });
+
+        it("verifies all 8 Union Territories have at least one verified official government source", () => {
+            const inventory = governmentSourceRegistry.getCoverageInventory();
+            const summary = inventory.stateCoverageSummary;
+
+            assert.equal(CANONICAL_UNION_TERRITORIES.length, 8);
+            for (const utCode of CANONICAL_UNION_TERRITORIES) {
+                const entry = summary.breakdown[utCode];
+                assert.ok(entry, `Missing breakdown entry for UT ${utCode}`);
+                assert.ok(entry.sourcesCount >= 1, `UT ${utCode} has 0 sources registered`);
+                assert.ok(entry.sources.length >= 1);
+
+                // Verify that every UT has a dedicated UT policy/gazette portal in url_verified stage
+                const utGazetteOrPortal = entry.sources.find(
+                    (s) => s.connectorType === CONNECTOR_TYPES.PORTAL_SCRAPER
+                );
+                assert.ok(utGazetteOrPortal, `UT ${utCode} is missing a dedicated UT portal source`);
+                assert.equal(utGazetteOrPortal.coverageStatus, SOURCE_LIFECYCLE_STAGES.URL_VERIFIED);
+                assert.equal(utGazetteOrPortal.isEnabled, false);
+
+                for (const src of entry.sources) {
+                    assert.ok(src.officialSourceUrl.startsWith("http://") || src.officialSourceUrl.startsWith("https://"));
+                    assert.ok([SOURCE_LIFECYCLE_STAGES.CONFIGURED, SOURCE_LIFECYCLE_STAGES.URL_VERIFIED].includes(src.coverageStatus));
+                }
+            }
+        });
+
+        it("verifies stateCoverageSummary reports 36/36 covered states and UTs with 0 uncovered", () => {
+            const summary = governmentSourceRegistry.getStateCoverageSummary();
+            assert.equal(summary.totalUnits, 36);
+            assert.equal(summary.coveredCount, 36);
+            assert.equal(summary.uncoveredCount, 0);
+            assert.deepEqual(summary.uncoveredStateCodes, []);
+            assert.equal(summary.coveredStateCodes.length, 36);
+        });
+
         it("verifies state and municipal sources have authentic government URLs and honest lifecycle status", () => {
             const stateSources = governmentSourceRegistry.getSourcesByJurisdiction(JURISDICTION_LEVELS.STATE);
             const muniSources = governmentSourceRegistry.getSourcesByJurisdiction(JURISDICTION_LEVELS.MUNICIPAL);
 
-            assert.ok(stateSources.length >= 20);
-            assert.ok(muniSources.length >= 2);
+            assert.equal(stateSources.length, 55);
+            assert.equal(muniSources.length, 2);
 
             // MCD Delhi municipal check
             const mcd = governmentSourceRegistry.getSource("mcd_delhi_notices");
@@ -535,6 +599,7 @@ describe("Government Source Registry Suite", () => {
             assert.equal(mcd.stateCode, "DL");
             assert.equal(mcd.officialDomain, "mcdonline.nic.in");
             assert.equal(mcd.coverageStatus, SOURCE_LIFECYCLE_STAGES.URL_VERIFIED);
+            assert.equal(mcd.isEnabled, false);
 
             // BMC Mumbai municipal check
             const bmc = governmentSourceRegistry.getSource("bmc_mumbai_citizen_portal");
@@ -543,6 +608,7 @@ describe("Government Source Registry Suite", () => {
             assert.equal(bmc.stateCode, "MH");
             assert.equal(bmc.officialDomain, "mcgm.gov.in");
             assert.equal(bmc.coverageStatus, SOURCE_LIFECYCLE_STAGES.URL_VERIFIED);
+            assert.equal(bmc.isEnabled, false);
 
             // Maharashtra e-Gazette check
             const maha = governmentSourceRegistry.getSource("maha_egazette_portal");
@@ -551,7 +617,25 @@ describe("Government Source Registry Suite", () => {
             assert.equal(maha.stateCode, "MH");
             assert.equal(maha.officialDomain, "mahaonline.gov.in");
             assert.equal(maha.coverageStatus, SOURCE_LIFECYCLE_STAGES.URL_VERIFIED);
+            assert.equal(maha.isEnabled, false);
+
+            // UP Shasanadesh check
+            const up = governmentSourceRegistry.getSource("up_shasanadesh_portal");
+            assert.ok(up);
+            assert.equal(up.jurisdictionLevel, JURISDICTION_LEVELS.STATE);
+            assert.equal(up.stateCode, "UP");
+            assert.equal(up.officialDomain, "up.gov.in");
+            assert.equal(up.coverageStatus, SOURCE_LIFECYCLE_STAGES.URL_VERIFIED);
+            assert.equal(up.isEnabled, false);
+        });
+
+        it("verifies duplicate registration prevention catches collisions against all 58 baseline sources", () => {
+            for (const baselineSrc of VERIFIED_BASELINE_GOVERNMENT_SOURCES) {
+                assert.throws(
+                    () => governmentSourceRegistry.registerSource(baselineSrc),
+                    SourceValidationError
+                );
+            }
         });
     });
 });
-
