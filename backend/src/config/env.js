@@ -52,8 +52,8 @@ export const config = {
     },
     ai: {
         geminiApiKey: process.env.GEMINI_API_KEY || "",
-        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-        embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || "text-embedding-004",
+        model: process.env.GEMINI_MODEL || "gemini-3-flash-preview",
+        embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || "gemini-embedding-001",
         ttsModel: process.env.GEMINI_TTS_MODEL || "gemini-2.5-flash",
         timeoutMs: parseInt(process.env.GEMINI_TIMEOUT_MS, 10) || 30000,
         maxRetries: parseInt(process.env.GEMINI_MAX_RETRIES, 10) || 3,

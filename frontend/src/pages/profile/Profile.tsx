@@ -28,6 +28,12 @@ import {
   UpdateProfilePayload,
 } from "@/types/auth";
 import { ClientApiError } from "@/types/api";
+import { INDIAN_STATES } from "@/constants/indianStates";
+
+const STATE_OPTIONS = [
+  { value: "All India", label: "All India / Central Jurisdiction" },
+  ...INDIAN_STATES.map((s) => ({ value: s, label: s })),
+];
 
 const GENDERS: { value: Gender; label: string }[] = [
   { value: "female", label: "Female / महिला" },
@@ -131,6 +137,7 @@ export const Profile: React.FC = () => {
   });
 
   const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -149,7 +156,7 @@ export const Profile: React.FC = () => {
         caste: profile.caste || "general",
         isSpeciallyAbled: profile.isSpeciallyAbled || false,
         disabilityPercentage: profile.disabilityPercentage || 0,
-        state: profile.state || "Uttar Pradesh",
+        state: profile.state || "All India",
         city: profile.city || "",
         location: {
           area: profile.location?.area || "",
@@ -175,11 +182,18 @@ export const Profile: React.FC = () => {
     setSaving(true);
     setSuccessMsg(null);
     setErrorMsg(null);
+    setJustSaved(false);
 
     try {
       await updateProfile(formData);
-      setSuccessMsg("Citizen profile updated successfully! Your matched schemes have been refreshed.");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      setJustSaved(true);
+      setSuccessMsg("Profile changes saved successfully! Your matched schemes have been refreshed.");
+      setTimeout(() => {
+        setJustSaved(false);
+      }, 4000);
+      setTimeout(() => {
+        setSuccessMsg(null);
+      }, 5000);
     } catch (err: unknown) {
       if (err instanceof ClientApiError) {
         setErrorMsg(err.message);
@@ -208,16 +222,23 @@ export const Profile: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          {profile?.isProfileComplete ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">
-              <CheckCircle2 className="h-3.5 w-3.5" /> Profile Complete
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
-              Incomplete Profile
-            </span>
-          )}
+        <div className="flex flex-col sm:items-end gap-1">
+          <div className="flex items-center gap-2">
+            {profile?.isProfileComplete ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">
+                <CheckCircle2 className="h-3.5 w-3.5" /> Profile Complete
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
+                Incomplete Profile
+              </span>
+            )}
+          </div>
+          <span className="text-[11px] text-neel-muted">
+            {profile?.isProfileComplete
+              ? "All essential criteria set for 100% accurate scheme matching"
+              : "Fill State, City, Gender & Occupation for 100% complete status"}
+          </span>
         </div>
       </div>
 
@@ -317,19 +338,17 @@ export const Profile: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Input
+            <Select
               label="State"
-              value={formData.state || ""}
+              value={formData.state || "All India"}
               onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-              placeholder="e.g. Uttar Pradesh"
-              required
+              options={STATE_OPTIONS}
             />
             <Input
               label="City / District"
               value={formData.city || ""}
               onChange={(e) => setFormData({ ...formData, city: e.target.value })}
               placeholder="e.g. Varanasi"
-              required
             />
             <Select
               label="Locality Type"
@@ -488,22 +507,39 @@ export const Profile: React.FC = () => {
           </div>
         </Card>
 
-        {/* Submit */}
-        <div className="flex items-center justify-between pt-4 border-t border-paper-border">
-          <div className="flex items-center gap-2 text-xs text-neel-muted">
-            <ShieldCheck className="h-4 w-4 text-emerald-700" />
-            <span>Updates immediately recalibrate scheme eligibility scores.</span>
+        {/* Submit Bar with Instant Inline Feedback */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-paper-border">
+          <div className="flex flex-col gap-1 w-full sm:w-auto">
+            <div className="flex items-center gap-2 text-xs text-neel-muted">
+              <ShieldCheck className="h-4 w-4 text-emerald-700 shrink-0" />
+              <span>Updates immediately recalibrate scheme eligibility scores.</span>
+            </div>
+            {justSaved && (
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 animate-fade-in">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                <span>Changes saved successfully!</span>
+                {profile?.isProfileComplete ? (
+                  <span className="text-emerald-800 font-normal">Profile is complete for 100% matching.</span>
+                ) : (
+                  <span className="text-amber-800 font-normal">
+                    (Tip: Choose a specific State & City for "Profile Complete" status)
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
-          <Button
-            type="submit"
-            variant="primary"
-            size="lg"
-            isLoading={saving}
-            leftIcon={<Save className="h-4 w-4" />}
-          >
-            Save Profile Changes
-          </Button>
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+            <Button
+              type="submit"
+              variant={justSaved ? "secondary" : "primary"}
+              size="lg"
+              isLoading={saving}
+              leftIcon={justSaved ? <CheckCircle2 className="h-4 w-4 text-emerald-700" /> : <Save className="h-4 w-4" />}
+            >
+              {justSaved ? "Saved Successfully!" : "Save Profile Changes"}
+            </Button>
+          </div>
         </div>
       </form>
     </div>

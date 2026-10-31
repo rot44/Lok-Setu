@@ -68,15 +68,9 @@ const isTransientError = (error) => {
  */
 const resolveEmbeddingModel = (requestedModel) => {
     const model = requestedModel || config.ai.embeddingModel || "gemini-embedding-001";
-    if (model === "text-embedding-004") {
-        return {
-            modelName: "gemini-embedding-001",
-            outputDimensionality: 768,
-        };
-    }
     return {
-        modelName: model,
-        outputDimensionality: undefined,
+        modelName: model === "text-embedding-004" ? "gemini-embedding-001" : model,
+        outputDimensionality: 768,
     };
 };
 

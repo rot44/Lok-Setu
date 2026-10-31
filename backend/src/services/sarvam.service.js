@@ -273,7 +273,7 @@ export const calculateWavDuration = (audioBuffer, defaultSampleRate = 24000) => 
  */
 export class SarvamService {
     constructor(options = {}) {
-        this.apiKey = options.apiKey || config.sarvam.apiKey;
+        this.apiKey = options.apiKey !== undefined ? options.apiKey : config.sarvam.apiKey;
         this.translationModel = options.translationModel || config.sarvam.translationModel;
         this.ttsModel = options.ttsModel || config.sarvam.ttsModel;
         this.defaultSpeaker = options.defaultSpeaker || config.sarvam.defaultSpeaker;
