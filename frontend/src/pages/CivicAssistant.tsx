@@ -13,8 +13,12 @@ import {
   FileText,
   HelpCircle,
   X,
+  Volume2,
+  VolumeX,
+  Loader2,
 } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useAudio } from "@/context/AudioContext";
 import { Button } from "@/components/ui/Button";
 import {
   assistantService,
@@ -53,8 +57,44 @@ export const CivicAssistant: React.FC = () => {
   const [sessionId, setSessionId] = useState<string | null>(() => getStoredSessionId());
   const [activeSchemeBadge, setActiveSchemeBadge] = useState<string | null>(null);
   const [lastAttemptedQuery, setLastAttemptedQuery] = useState<string>("");
+  const { currentTrack, isPlaying, playTrack, togglePlayPause } = useAudio();
+  const [loadingAudioId, setLoadingAudioId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const autoPromptTriggered = useRef(false);
+
+  const handlePlayAssistantVoice = async (msg: AssistantMessage) => {
+    if (currentTrack?.id === msg.id) {
+      togglePlayPause();
+      return;
+    }
+
+    try {
+      setLoadingAudioId(msg.id);
+      const audioRes = await assistantService.synthesizeAssistantAudio(
+        msg.text,
+        msg.languageUsed || language,
+        activeSchemeBadge || "AI Scheme Explainer"
+      );
+
+      playTrack({
+        id: msg.id,
+        title: activeSchemeBadge
+          ? `${activeSchemeBadge} (AI Explainer)`
+          : "AI Scheme Explanation",
+        audioUrl: audioRes.audioUrl,
+        language: audioRes.language || language,
+        authority: "Lok-Setu Civic AI",
+        durationSeconds: audioRes.durationSeconds,
+        source: "assistant",
+        plainSummary: msg.text,
+      });
+    } catch (err: unknown) {
+      const errMessage = err instanceof Error ? err.message : "Failed to synthesize voice.";
+      setError(errMessage);
+    } finally {
+      setLoadingAudioId(null);
+    }
+  };
 
   // Scroll to bottom on new messages
   const scrollToBottom = () => {
@@ -373,6 +413,35 @@ export const CivicAssistant: React.FC = () => {
                       )}
                     </div>
                   )}
+
+                  {/* Spoken AI Voice Explainer Action */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-paper-border/60">
+                    <button
+                      type="button"
+                      onClick={() => handlePlayAssistantVoice(m)}
+                      disabled={loadingAudioId === m.id}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-paper-dark hover:bg-vermilion hover:text-white text-neel transition-all shadow-xs cursor-pointer focus:outline-none"
+                      title={currentTrack?.id === m.id && isPlaying ? "Pause spoken explainer" : "Listen to spoken explanation"}
+                    >
+                      {loadingAudioId === m.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-vermilion" />
+                      ) : currentTrack?.id === m.id && isPlaying ? (
+                        <VolumeX className="h-3.5 w-3.5 text-white" />
+                      ) : (
+                        <Volume2 className="h-3.5 w-3.5 text-vermilion" />
+                      )}
+                      <span>
+                        {loadingAudioId === m.id
+                          ? "Generating Audio..."
+                          : currentTrack?.id === m.id && isPlaying
+                          ? "Pause Audio"
+                          : "Listen to Explanation (AI Voice)"}
+                      </span>
+                    </button>
+                    <span className="text-[11px] text-neel-muted font-medium flex items-center gap-1">
+                      <Sparkles className="h-3 w-3 text-mustard-dark" /> Sarvam Bulbul Indic Voice
+                    </span>
+                  </div>
                 </>
               )}
             </div>

@@ -8,7 +8,7 @@ export interface AudioTrack {
   language: string;
   authority?: string;
   durationSeconds?: number;
-  source: "scheme" | "notice";
+  source: "scheme" | "notice" | "assistant";
   plainSummary?: string;
 }
 

@@ -10,6 +10,7 @@ import {
   Loader2,
   FileText,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
 import { PLAYBACK_RATES } from "@/types/voice";
@@ -79,6 +80,8 @@ export const GlobalAudioPlayer: React.FC = () => {
           <div className="h-10 w-10 rounded-full bg-neel/10 border border-neel/20 flex items-center justify-center shrink-0 text-neel">
             {currentTrack.source === "notice" ? (
               <FileText className="h-5 w-5 text-mustard-dark" />
+            ) : currentTrack.source === "assistant" ? (
+              <Sparkles className="h-5 w-5 text-mustard-dark" />
             ) : (
               <Volume2 className="h-5 w-5 text-vermilion" />
             )}
@@ -90,7 +93,11 @@ export const GlobalAudioPlayer: React.FC = () => {
                 {currentTrack.language.toUpperCase()}
               </span>
               <span className="px-1.5 py-0.5 rounded bg-paper-dark text-neel-muted border border-paper-border text-[10px]">
-                {currentTrack.source === "notice" ? "Citizen Notice" : "Scheme Explainer"}
+                {currentTrack.source === "notice"
+                  ? "Citizen Notice"
+                  : currentTrack.source === "assistant"
+                  ? "AI Voice Explanation"
+                  : "Scheme Explainer"}
               </span>
               <span className="hidden md:inline-flex items-center gap-1 text-[10px] text-sage-dark font-medium">
                 <ShieldCheck className="h-3 w-3" />

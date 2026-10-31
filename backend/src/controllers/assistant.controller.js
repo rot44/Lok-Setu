@@ -5,10 +5,33 @@ import {
     validateQuery,
     validateLanguage,
 } from "../services/civicAnalysis.service.js";
+import { sarvamService, toTwoLetterLang } from "../services/sarvam.service.js";
+import { uploadFileToS3, downloadFileBufferFromS3, isStorageConfigured } from "../utils/s3Uploader.js";
 import { CHAT_SESSION_MODES } from "../constants.js";
 import { ApiError } from "../utils/apiError.js";
 import { APIResponse } from "../utils/apiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+
+/**
+ * In-memory LRU-like audio cache for assistant speech synthesis
+ */
+const assistantAudioCache = new Map();
+
+/**
+ * Clean markdown symbols, headers, URLs, and citations for natural speech synthesis
+ */
+export const cleanTextForSpeech = (text = "") => {
+    return text
+        .replace(/\[CITE-[^\]]+\]/g, "")
+        .replace(/\[.*?\]\(.*?\)/g, "")
+        .replace(/\*\*(.*?)\*\*/g, "$1")
+        .replace(/\*(.*?)\*/g, "$1")
+        .replace(/#{1,6}\s+/g, "")
+        .replace(/^[-*•]\s+/gm, "")
+        .replace(/https?:\/\/\S+/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+};
 
 /**
  * Computes deterministic SHA-256 hash of a guest access token.
@@ -220,4 +243,141 @@ export const getAssistantSession = asyncHandler(async (req, res) => {
             "Chat session retrieved successfully."
         )
     );
+});
+
+/**
+ * @desc    Generate natural spoken audio explanation for an assistant answer (Sarvam Bulbul TTS)
+ * @route   POST /api/v1/assistant/audio
+ * @access  Public
+ */
+export const generateAssistantSpeech = asyncHandler(async (req, res) => {
+    const { text, language = "hi", title } = req.body;
+
+    if (!text || typeof text !== "string" || !text.trim()) {
+        throw new ApiError(400, "Text is required to generate speech.");
+    }
+
+    const languageCode = toTwoLetterLang(language);
+    const cleanSpeechText = cleanTextForSpeech(text);
+
+    // Compute deterministic hash of text + language
+    const contentHash = crypto
+        .createHash("sha256")
+        .update(`${languageCode}::${cleanSpeechText}`)
+        .digest("hex");
+
+    const streamUrl = `/api/v1/assistant/audio/stream?hash=${contentHash}&lang=${languageCode}`;
+
+    // 1. Check in-memory cache
+    if (assistantAudioCache.has(contentHash)) {
+        const cached = assistantAudioCache.get(contentHash);
+        return res.status(200).json(
+            new APIResponse(
+                200,
+                {
+                    audioUrl: streamUrl,
+                    durationSeconds: cached.durationSeconds || 0,
+                    language: languageCode,
+                    voiceName: cached.voiceName || "shubh",
+                    isCached: true,
+                },
+                "Spoken explanation retrieved from cache."
+            )
+        );
+    }
+
+    // 2. Synthesize using Sarvam Bulbul TTS
+    const ttsResult = await sarvamService.synthesizeSpeech(cleanSpeechText, languageCode);
+
+    // 3. Cache in memory (evict oldest if cache exceeds 100 entries)
+    if (assistantAudioCache.size >= 100) {
+        const firstKey = assistantAudioCache.keys().next().value;
+        assistantAudioCache.delete(firstKey);
+    }
+    assistantAudioCache.set(contentHash, {
+        buffer: ttsResult.audioBuffer,
+        durationSeconds: ttsResult.durationSeconds,
+        voiceName: ttsResult.speaker,
+    });
+
+    // 4. Save to S3 in background if configured
+    if (isStorageConfigured()) {
+        const s3Key = `audio/assistant/${contentHash}.wav`;
+        uploadFileToS3(ttsResult.audioBuffer, s3Key, "audio/wav").catch((err) =>
+            console.error("⚠️ Background assistant audio S3 upload error:", err.message)
+        );
+    }
+
+    return res.status(200).json(
+        new APIResponse(
+            200,
+            {
+                audioUrl: streamUrl,
+                durationSeconds: ttsResult.durationSeconds,
+                language: languageCode,
+                voiceName: ttsResult.speaker,
+                isCached: false,
+            },
+            "Spoken explanation generated successfully."
+        )
+    );
+});
+
+/**
+ * @desc    Stream audio WAV for assistant explanation with HTTP Range support
+ * @route   GET /api/v1/assistant/audio/stream
+ * @access  Public
+ */
+export const streamAssistantAudio = asyncHandler(async (req, res) => {
+    const { hash, lang = "hi" } = req.query;
+
+    if (!hash || typeof hash !== "string") {
+        throw new ApiError(400, "Valid audio content hash is required.");
+    }
+
+    let audioBuffer = null;
+
+    // 1. Check in-memory cache
+    if (assistantAudioCache.has(hash)) {
+        audioBuffer = assistantAudioCache.get(hash).buffer;
+    }
+
+    // 2. Try download from S3 if configured
+    if (!audioBuffer && isStorageConfigured()) {
+        try {
+            audioBuffer = await downloadFileBufferFromS3(`audio/assistant/${hash}.wav`);
+            assistantAudioCache.set(hash, { buffer: audioBuffer, durationSeconds: 0 });
+        } catch (_err) {
+            // S3 object not found
+        }
+    }
+
+    if (!audioBuffer || audioBuffer.length === 0) {
+        throw new ApiError(404, "Audio stream not found. Please request speech synthesis first.");
+    }
+
+    const total = audioBuffer.length;
+    res.setHeader("Content-Type", "audio/wav");
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+
+    const range = req.headers.range;
+    if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+
+        if (start >= total || end >= total || start > end) {
+            res.setHeader("Content-Range", `bytes */${total}`);
+            return res.status(416).send("Requested range not satisfiable");
+        }
+
+        const chunk = audioBuffer.subarray(start, end + 1);
+        res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
+        res.setHeader("Content-Length", chunk.length);
+        return res.status(206).send(chunk);
+    }
+
+    res.setHeader("Content-Length", total);
+    return res.status(200).send(audioBuffer);
 });

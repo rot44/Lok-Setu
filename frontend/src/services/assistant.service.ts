@@ -53,6 +53,14 @@ export interface AssistantSessionResponse {
   messages: AssistantMessage[];
 }
 
+export interface AssistantAudioResponse {
+  audioUrl: string;
+  durationSeconds: number;
+  language: string;
+  voiceName?: string;
+  isCached: boolean;
+}
+
 const GUEST_TOKEN_KEY = "loksetu_guest_token";
 const SESSION_ID_KEY = "loksetu_assistant_session_id";
 
@@ -133,6 +141,18 @@ export const assistantService = {
 
     return await api.get<AssistantSessionResponse>(`/assistant/session/${sessionId}`, {
       headers,
+    });
+  },
+
+  synthesizeAssistantAudio: async (
+    text: string,
+    language?: string,
+    title?: string
+  ): Promise<AssistantAudioResponse> => {
+    return await api.post<AssistantAudioResponse>("/assistant/audio", {
+      text,
+      language,
+      title,
     });
   },
 };
