@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { assistantService } from "@/services/assistant.service";
-import { BCP47_SPEECH_MAP } from "@/types/voice";
+export { BCP47_SPEECH_MAP } from "@/types/voice";
 
 export interface UseSpeechRecognitionOptions {
   language?: string;
