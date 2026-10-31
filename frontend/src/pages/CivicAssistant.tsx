@@ -16,6 +16,8 @@ import {
   Volume2,
   VolumeX,
   Loader2,
+  Mic,
+  MicOff,
 } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAudio } from "@/context/AudioContext";
@@ -27,6 +29,8 @@ import {
   clearStoredSession,
 } from "@/services/assistant.service";
 import { buildSchemeExplanationPrompt } from "@/utils/aiPrompt";
+import { useSpeechRecognition, BCP47_SPEECH_MAP } from "@/hooks/useSpeechRecognition";
+import { cn } from "@/utils/cn";
 
 const SUGGESTED_QUERIES = [
   {
@@ -59,82 +63,62 @@ export const CivicAssistant: React.FC = () => {
   const [lastAttemptedQuery, setLastAttemptedQuery] = useState<string>("");
   const { currentTrack, isPlaying, playTrack, togglePlayPause } = useAudio();
   const [loadingAudioId, setLoadingAudioId] = useState<string | null>(null);
+  const [voiceAutoPlay, setVoiceAutoPlay] = useState<boolean>(true);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const autoPromptTriggered = useRef(false);
 
-  const handlePlayAssistantVoice = async (msg: AssistantMessage) => {
-    if (currentTrack?.id === msg.id) {
-      togglePlayPause();
-      return;
-    }
-
-    try {
-      setLoadingAudioId(msg.id);
-      const audioRes = await assistantService.synthesizeAssistantAudio(
-        msg.text,
-        msg.languageUsed || language,
-        activeSchemeBadge || "AI Scheme Explainer"
-      );
-
-      playTrack({
-        id: msg.id,
-        title: activeSchemeBadge
-          ? `${activeSchemeBadge} (AI Explainer)`
-          : "AI Scheme Explanation",
-        audioUrl: audioRes.audioUrl,
-        language: audioRes.language || language,
-        authority: "Lok-Setu Civic AI",
-        durationSeconds: audioRes.durationSeconds,
-        source: "assistant",
-        plainSummary: msg.text,
-      });
-    } catch (err: unknown) {
-      const errMessage = err instanceof Error ? err.message : "Failed to synthesize voice.";
-      setError(errMessage);
-    } finally {
-      setLoadingAudioId(null);
-    }
-  };
-
-  // Scroll to bottom on new messages
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, loading]);
-
-  // Load existing session history if available
-  useEffect(() => {
-    let isMounted = true;
-    const loadSession = async () => {
-      const activeSessionId = getStoredSessionId();
-      if (!activeSessionId) return;
+  const handlePlayAssistantVoice = useCallback(
+    async (msg: AssistantMessage) => {
+      if (currentTrack?.id === msg.id) {
+        togglePlayPause();
+        return;
+      }
 
       try {
-        const history = await assistantService.getSessionHistory(activeSessionId);
-        if (isMounted && history?.messages && history.messages.length > 0) {
-          setMessages(history.messages);
-          setSessionId(history.sessionId);
-        }
-      } catch {
-        // Stale or inaccessible session: clear it cleanly
-        clearStoredSession();
-        if (isMounted) {
-          setSessionId(null);
-        }
-      }
-    };
+        setLoadingAudioId(msg.id);
+        const audioRes = await assistantService.synthesizeAssistantAudio(
+          msg.text,
+          msg.languageUsed || language,
+          activeSchemeBadge || "AI Scheme Explainer"
+        );
 
-    loadSession();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+        playTrack({
+          id: msg.id,
+          title: activeSchemeBadge
+            ? `${activeSchemeBadge} (AI Explainer)`
+            : "AI Scheme Explanation",
+          audioUrl: audioRes.audioUrl,
+          language: audioRes.language || language,
+          authority: "Lok-Setu Civic AI (Sarvam)",
+          durationSeconds: audioRes.durationSeconds,
+          source: "assistant",
+          plainSummary: msg.text,
+        });
+      } catch (err: unknown) {
+        console.warn("Sarvam audio synthesis fallback:", err);
+        if (typeof window !== "undefined" && "speechSynthesis" in window) {
+          try {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(msg.text.slice(0, 350));
+            utterance.lang = BCP47_SPEECH_MAP[msg.languageUsed || language] || "hi-IN";
+            window.speechSynthesis.speak(utterance);
+          } catch {
+            const errMessage = err instanceof Error ? err.message : "Failed to synthesize voice.";
+            setError(errMessage);
+          }
+        } else {
+          const errMessage = err instanceof Error ? err.message : "Failed to synthesize voice.";
+          setError(errMessage);
+        }
+      } finally {
+        setLoadingAudioId(null);
+      }
+    },
+    [currentTrack?.id, togglePlayPause, language, activeSchemeBadge, playTrack]
+  );
 
   const handleSend = useCallback(
-    async (queryText?: string) => {
+    async (queryText?: string, options?: { autoSpeak?: boolean }) => {
       const textToSend = (queryText || inputText || lastAttemptedQuery).trim();
       if (!textToSend || loading) return;
 
@@ -166,6 +150,11 @@ export const CivicAssistant: React.FC = () => {
         }
 
         setMessages((prev) => [...prev, response.message]);
+
+        // Auto-play voice response if voice mode was triggered or auto-reply enabled
+        if (options?.autoSpeak || voiceAutoPlay) {
+          handlePlayAssistantVoice(response.message);
+        }
       } catch (err: unknown) {
         const errorMsg =
           err instanceof Error ? err.message : "Failed to generate answer. Please try again.";
@@ -178,8 +167,78 @@ export const CivicAssistant: React.FC = () => {
         setLoading(false);
       }
     },
-    [inputText, loading, language, sessionId, lastAttemptedQuery]
+    [inputText, loading, language, sessionId, lastAttemptedQuery, voiceAutoPlay, handlePlayAssistantVoice]
   );
+
+  // Universal Speech Recognition Hook (Two-Way Voice)
+  const {
+    isSupported: isSpeechSupported,
+    isListening,
+    startListening,
+    stopListening,
+    resetTranscript,
+  } = useSpeechRecognition({
+    language,
+    interimResults: true,
+    continuous: false,
+    onResult: (transcriptText) => {
+      setInputText(transcriptText);
+    },
+    onEnd: (finalTranscript) => {
+      if (finalTranscript && finalTranscript.trim()) {
+        handleSend(finalTranscript, { autoSpeak: true });
+      }
+    },
+    onError: (speechErr) => {
+      setError(speechErr);
+    },
+  });
+
+  const handleToggleVoiceInput = () => {
+    if (isListening) {
+      stopListening();
+    } else {
+      setError(null);
+      resetTranscript();
+      startListening(language);
+    }
+  };
+
+  // Scroll to bottom on new messages
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, loading]);
+
+  // Load existing session history if available
+  useEffect(() => {
+    let isMounted = true;
+    const loadSession = async () => {
+      const activeSessionId = getStoredSessionId();
+      if (!activeSessionId) return;
+
+      try {
+        const history = await assistantService.getSessionHistory(activeSessionId);
+        if (isMounted && history?.messages && history.messages.length > 0) {
+          setMessages(history.messages);
+          setSessionId(history.sessionId);
+        }
+      } catch {
+        clearStoredSession();
+        if (isMounted) {
+          setSessionId(null);
+        }
+      }
+    };
+
+    loadSession();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Auto-prompt handler when arriving with a specific scheme, preprompt or query
   useEffect(() => {
@@ -259,6 +318,9 @@ export const CivicAssistant: React.FC = () => {
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-sage/40 text-neel border border-sage">
                 <Sparkles className="h-2.5 w-2.5 text-vermilion" /> Grounded RAG
               </span>
+              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-vermilion/10 text-vermilion border border-vermilion/30">
+                <Mic className="h-2.5 w-2.5" /> Two-Way Voice
+              </span>
             </div>
             <span className="text-[11px] text-neel-muted font-medium block">
               Grounded strictly in verified Indian government gazettes & policies
@@ -267,6 +329,26 @@ export const CivicAssistant: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Voice Auto-Reply Toggle */}
+          <button
+            type="button"
+            onClick={() => setVoiceAutoPlay(!voiceAutoPlay)}
+            className={cn(
+              "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors border cursor-pointer",
+              voiceAutoPlay
+                ? "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
+                : "bg-stone-50 text-stone-500 border-stone-200 hover:bg-stone-100"
+            )}
+            title={
+              voiceAutoPlay
+                ? "Sarvam AI Voice auto-reply is ON"
+                : "Sarvam AI Voice auto-reply is OFF"
+            }
+          >
+            <Volume2 className={cn("h-3.5 w-3.5", voiceAutoPlay ? "text-emerald-600" : "text-stone-400")} />
+            <span className="hidden md:inline">{t("assistant.voiceAutoReply", "Voice Reply")}</span>
+            <span className={cn("h-1.5 w-1.5 rounded-full", voiceAutoPlay ? "bg-emerald-500" : "bg-stone-300")} />
+          </button>
           {messages.length > 0 && (
             <Button
               variant="outline"
@@ -503,6 +585,28 @@ export const CivicAssistant: React.FC = () => {
         </div>
       )}
 
+      {/* Listening Status Banner */}
+      {isListening && (
+        <div className="px-4 py-2.5 bg-red-50/90 border-t border-red-200 flex items-center justify-between text-xs text-red-700 animate-in fade-in duration-150">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600"></span>
+            </span>
+            <span className="font-medium">
+              {t("assistant.listening", "Listening... Speak in your language")}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={stopListening}
+            className="px-2.5 py-1 rounded bg-red-100 hover:bg-red-200 text-red-800 font-semibold text-[11px] transition-colors cursor-pointer"
+          >
+            {t("assistant.stopListening", "Done speaking")}
+          </button>
+        </div>
+      )}
+
       {/* Input Bar */}
       <form
         onSubmit={(e) => {
@@ -511,14 +615,45 @@ export const CivicAssistant: React.FC = () => {
         }}
         className="p-3 sm:p-4 bg-white border-t border-paper-border flex items-center gap-2 shrink-0"
       >
+        {/* Two-Way Microphone Button */}
+        <button
+          type="button"
+          onClick={handleToggleVoiceInput}
+          disabled={loading}
+          className={cn(
+            "flex items-center justify-center h-10 w-10 rounded-md transition-all shrink-0 focus:outline-none focus:ring-2 focus:ring-neel cursor-pointer",
+            isListening
+              ? "bg-red-600 text-white shadow-md animate-pulse hover:bg-red-700"
+              : "bg-paper-light border border-paper-border text-stone-700 hover:text-stone-900 hover:bg-stone-100"
+          )}
+          title={
+            !isSpeechSupported
+              ? "Voice input available in Chrome, Safari & Edge"
+              : isListening
+              ? t("assistant.stopListening", "Done speaking")
+              : t("assistant.voiceInput", "Speak your question (Microphone)")
+          }
+          aria-label="Toggle voice input"
+        >
+          {isListening ? (
+            <MicOff className="h-4 w-4" />
+          ) : (
+            <Mic className="h-4 w-4 text-vermilion" />
+          )}
+        </button>
+
         <input
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           placeholder={
-            isHindi
-              ? "सरकारी योजनाओं, अधिकारों या सब्सिडी के बारे में प्रश्न पूछें..."
-              : "Ask a question about government policies, subsidies, or civic rights..."
+            isListening
+              ? isHindi
+                ? "सुन रहे हैं... बोलिए..."
+                : "Listening... speak now..."
+              : isHindi
+              ? "सरकारी योजनाओं, अधिकारों या सब्सिडी के बारे में प्रश्न पूछें या माइक दबाकर बोलें..."
+              : "Ask a question or tap the mic to speak in your language..."
           }
           disabled={loading}
           className="flex-1 bg-paper-light text-neel placeholder:text-neel-muted/60 text-sm rounded border border-paper-border px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-neel disabled:opacity-50"
