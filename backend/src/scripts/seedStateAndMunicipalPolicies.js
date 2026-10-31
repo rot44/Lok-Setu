@@ -206,3 +206,4 @@ if (process.argv[1]?.endsWith("seedStateAndMunicipalPolicies.js")) {
             process.exit(1);
         });
 }
+
