@@ -71,6 +71,7 @@ export const apiRateLimiter = rateLimit({
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: () => process.env.NODE_ENV === "development",
     ...(process.env.NODE_ENV === "production" && {
         store: new RedisStore({ sendCommand: safeSendCommand }),
     }),
@@ -93,6 +94,7 @@ export const authRateLimiter = rateLimit({
     max: process.env.NODE_ENV === "production" ? 10 : 100,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: () => process.env.NODE_ENV === "development",
     ...(process.env.NODE_ENV === "production" && {
         store: new RedisStore({ sendCommand: safeSendCommand }),
     }),
