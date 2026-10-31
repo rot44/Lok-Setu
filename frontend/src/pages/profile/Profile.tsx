@@ -136,7 +136,8 @@ export const Profile: React.FC = () => {
 
   useEffect(() => {
     refreshProfile();
-  }, [refreshProfile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (profile) {

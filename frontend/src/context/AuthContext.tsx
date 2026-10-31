@@ -126,7 +126,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const refreshProfile = async (): Promise<UserProfile | null> => {
+  const refreshProfile = useCallback(async (): Promise<UserProfile | null> => {
     try {
       const data = await api.get<UserProfile>("/profile");
       setProfile(data);
@@ -134,7 +134,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {
       return null;
     }
-  };
+  }, []);
 
   const updateProfile = async (payload: UpdateProfilePayload): Promise<UserProfile> => {
     setIsLoading(true);
