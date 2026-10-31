@@ -7,6 +7,7 @@ import {
     getAssistantSession,
 } from "../src/controllers/assistant.controller.js";
 import { AiChatSession } from "../src/models/aiChatSession.model.js";
+import { UserAnalyzedDocument } from "../src/models/userAnalyzedDocument.model.js";
 import { ApiError } from "../src/utils/apiError.js";
 import {
     buildCivicPrompt,
@@ -633,6 +634,61 @@ test("Lok-Setu Conversational Civic Assistant Suite", async (t) => {
             assert.equal(res.body.data.sessionId, "guest_session_456");
         } finally {
             AiChatSession.findOne = originalFindOne;
+        }
+    });
+
+    await t.test("handleAssistantChat injects uploaded notice evidence when documentId or documentText is supplied", async () => {
+        const dummyDocId = new mongoose.Types.ObjectId();
+        let capturedEvidence = null;
+
+        const originalDocFindById = UserAnalyzedDocument.findById;
+        const originalCreate = AiChatSession.create;
+
+        UserAnalyzedDocument.findById = async (id) => {
+            if (String(id) === String(dummyDocId)) {
+                return {
+                    _id: dummyDocId,
+                    fileName: "sample_ration_card_order.txt",
+                    rawExtractedText: "Mandatory biometric e-KYC compliance directive for all NFSA ration cards.",
+                    primaryExplanation: {
+                        summary: "Complete biometric e-KYC by 30 November 2026.",
+                    },
+                    fileUrl: "https://s3.example.com/notices/sample.txt",
+                };
+            }
+            return null;
+        };
+
+        AiChatSession.create = async (payload) => ({
+            ...payload,
+            _id: new mongoose.Types.ObjectId(),
+        });
+
+        try {
+            const req = {
+                user: { _id: new mongoose.Types.ObjectId() },
+                body: {
+                    query: "What is the deadline for this notice?",
+                    documentId: String(dummyDocId),
+                },
+                headers: {},
+                analysisService: async (query, opts) => {
+                    capturedEvidence = opts.evidence;
+                    return createMockAnalysisResult();
+                },
+            };
+
+            const res = createMockRes();
+            await handleAssistantChat(req, res, next);
+
+            assert.equal(res.statusCode, 200);
+            assert.ok(Array.isArray(capturedEvidence));
+            assert.equal(capturedEvidence.length, 1);
+            assert.equal(capturedEvidence[0].title, "sample_ration_card_order.txt");
+            assert.ok(capturedEvidence[0].sourceText.includes("Mandatory biometric e-KYC"));
+        } finally {
+            UserAnalyzedDocument.findById = originalDocFindById;
+            AiChatSession.create = originalCreate;
         }
     });
 });

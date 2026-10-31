@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
+import mongoose from "mongoose";
 import { AiChatSession } from "../models/aiChatSession.model.js";
+import { UserAnalyzedDocument } from "../models/userAnalyzedDocument.model.js";
 import {
     analyzeCivicQuery,
     validateQuery,
@@ -47,7 +49,15 @@ const hashGuestToken = (token) => {
  * @access  Public (Guest) or Private (Authenticated Citizen)
  */
 export const handleAssistantChat = asyncHandler(async (req, res) => {
-    const { query, language = "en", sessionId, guestToken: bodyGuestToken, filters = {} } = req.body;
+    const {
+        query,
+        language = "en",
+        sessionId,
+        guestToken: bodyGuestToken,
+        filters = {},
+        documentId,
+        documentText,
+    } = req.body;
 
     // 1. Strict input validation
     const validQuery = validateQuery(query);
@@ -109,15 +119,99 @@ export const handleAssistantChat = asyncHandler(async (req, res) => {
           }))
         : [];
 
-    // 4. Run grounded civic analysis (fails cleanly before mutating database if error occurs)
+    // 4. Resolve attached notice or uploaded document context if present
+    let preSuppliedEvidence = null;
+    let resolvedDocId = documentId || (session?.injectedUserProfileContext?.documentId);
+
+    if (resolvedDocId && mongoose.Types.ObjectId.isValid(resolvedDocId)) {
+        try {
+            const userDoc = await UserAnalyzedDocument.findById(resolvedDocId);
+            if (userDoc) {
+                const rawContent = userDoc.rawExtractedText || userDoc.primaryExplanation?.summary || "";
+                if (rawContent) {
+                    preSuppliedEvidence = [
+                        {
+                            chunkId: `notice_${userDoc._id}`,
+                            documentId: String(userDoc._id),
+                            title: userDoc.fileName || "Uploaded Citizen Notice",
+                            issuingAuthority: "Official Notice Authority",
+                            jurisdictionLevel: "State / Local Notice",
+                            sectionHeading: "Full Uploaded Document Text",
+                            sourceText: rawContent,
+                            sourceUrl: userDoc.fileUrl || null,
+                            officialPortalUrl: userDoc.fileUrl || null,
+                        },
+                    ];
+                }
+            }
+        } catch {
+            // Ignore doc fetch error
+        }
+    } else if (documentText && typeof documentText === "string" && documentText.trim()) {
+        preSuppliedEvidence = [
+            {
+                chunkId: "doc_provided_text",
+                title: "Uploaded Citizen Notice",
+                issuingAuthority: "Official Notice Authority",
+                jurisdictionLevel: "State / Local Notice",
+                sectionHeading: "Uploaded Notice Document",
+                sourceText: documentText.trim(),
+                sourceUrl: null,
+            },
+        ];
+    } else if (req.user) {
+        // Fallback: Check if user has an uploaded document matching the query
+        try {
+            const latestDoc = await UserAnalyzedDocument.findOne({ user: req.user._id }).sort({ createdAt: -1 });
+            if (latestDoc && (validQuery.includes(latestDoc.fileName) || /notice|circular|challan|order|ekyc|ration|tax/i.test(validQuery))) {
+                const rawContent = latestDoc.rawExtractedText || latestDoc.primaryExplanation?.summary || "";
+                if (rawContent) {
+                    preSuppliedEvidence = [
+                        {
+                            chunkId: `notice_${latestDoc._id}`,
+                            documentId: String(latestDoc._id),
+                            title: latestDoc.fileName || "Uploaded Citizen Notice",
+                            issuingAuthority: "Official Notice Authority",
+                            jurisdictionLevel: "State / Local Notice",
+                            sectionHeading: "Full Uploaded Document Text",
+                            sourceText: rawContent,
+                            sourceUrl: latestDoc.fileUrl || null,
+                            officialPortalUrl: latestDoc.fileUrl || null,
+                        },
+                    ];
+                    resolvedDocId = latestDoc._id;
+                }
+            }
+        } catch {
+            // Ignore fallback error
+        }
+    }
+
+    // Also check if the query itself contains extracted notice content
+    if (!preSuppliedEvidence && (validQuery.includes("Uploaded Notice:") || validQuery.includes("Notice Summary:"))) {
+        preSuppliedEvidence = [
+            {
+                chunkId: "query_notice_text",
+                title: "Uploaded Notice Context",
+                issuingAuthority: "Official Notice Authority",
+                jurisdictionLevel: "Notice",
+                sectionHeading: "Notice Summary & Facts",
+                sourceText: validQuery,
+                sourceUrl: null,
+            },
+        ];
+    }
+
+    // 5. Run grounded civic analysis with attached evidence
     const analysisFn = req.analysisService || analyzeCivicQuery;
     const analysis = await analysisFn(validQuery, {
         language: validLanguage,
         filters: typeof filters === "object" && filters !== null ? filters : {},
         conversationHistory,
+        evidence: preSuppliedEvidence,
     });
 
-    // 5. Construct user and assistant messages
+    // 6. Construct user and assistant messages
     const userMessage = {
         sender: "user",
         text: validQuery,
@@ -140,8 +234,14 @@ export const handleAssistantChat = asyncHandler(async (req, res) => {
         },
     };
 
-    // 6. Atomic Persistence
+    // 7. Atomic Persistence
     if (session) {
+        if (resolvedDocId && (!session.injectedUserProfileContext || !session.injectedUserProfileContext.documentId)) {
+            session.injectedUserProfileContext = {
+                ...(session.injectedUserProfileContext || {}),
+                documentId: resolvedDocId,
+            };
+        }
         session.messages.push(userMessage, assistantMessage);
         // Bounded session storage: keep maximum 30 messages
         if (session.messages.length > 30) {
@@ -153,7 +253,8 @@ export const handleAssistantChat = asyncHandler(async (req, res) => {
         session = await AiChatSession.create({
             user: sessionUserId,
             sessionId: newSessionId,
-            sessionMode: CHAT_SESSION_MODES.GENERAL_QUERY,
+            sessionMode: resolvedDocId ? CHAT_SESSION_MODES.ANALYZE_DOCUMENT : CHAT_SESSION_MODES.GENERAL_QUERY,
+            injectedUserProfileContext: resolvedDocId ? { documentId: resolvedDocId } : null,
             guestTokenHash,
             lastActiveAt: new Date(),
             messages: [userMessage, assistantMessage],

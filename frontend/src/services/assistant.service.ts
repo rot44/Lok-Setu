@@ -36,6 +36,8 @@ export interface AssistantChatPayload {
   sessionId?: string;
   guestToken?: string;
   filters?: Record<string, string>;
+  documentId?: string;
+  documentText?: string;
 }
 
 export interface AssistantChatResponse {

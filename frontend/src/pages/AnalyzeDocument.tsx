@@ -84,8 +84,9 @@ Notice Summary: ${shortSummary}
 ${deadlines ? `Key Deadlines: ${deadlines}\n` : ""}${rights ? `Stated Rights: ${rights}\n` : ""}${penalties ? `Penalties/Demands: ${penalties}\n` : ""}
 Citizen Question: ${askQuery}`.trim();
 
+    const docIdParam = documentId ? `&documentId=${encodeURIComponent(documentId)}` : "";
     navigate(
-      `/assistant?noticeTitle=${encodeURIComponent(docName)}&preprompt=${encodeURIComponent(fullPreprompt)}&autoSend=1`
+      `/assistant?noticeTitle=${encodeURIComponent(docName)}${docIdParam}&preprompt=${encodeURIComponent(fullPreprompt)}&autoSend=1`
     );
   };
 

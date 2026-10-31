@@ -79,6 +79,7 @@ export const CivicAssistant: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(() => getStoredSessionId());
   const [activeSchemeBadge, setActiveSchemeBadge] = useState<string | null>(null);
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(() => searchParams.get("documentId"));
   const [lastAttemptedQuery, setLastAttemptedQuery] = useState<string>("");
   const { currentTrack, isPlaying, playTrack, togglePlayPause } = useAudio();
   const [loadingAudioId, setLoadingAudioId] = useState<string | null>(null);
@@ -162,6 +163,7 @@ export const CivicAssistant: React.FC = () => {
           query: textToSend,
           language,
           sessionId: sessionId || undefined,
+          documentId: activeDocumentId || undefined,
         });
 
         if (response.sessionId) {
@@ -261,14 +263,19 @@ export const CivicAssistant: React.FC = () => {
   useEffect(() => {
     const schemeTitle = searchParams.get("schemeTitle");
     const noticeTitle = searchParams.get("noticeTitle");
+    const incomingDocId = searchParams.get("documentId");
     const incomingQuery = searchParams.get("query");
     const incomingPreprompt = searchParams.get("preprompt");
     const mode = searchParams.get("mode");
     const autoSend =
       searchParams.get("autoSend") === "1" || searchParams.get("autoSend") === "true";
 
+    if (incomingDocId) {
+      setActiveDocumentId(incomingDocId);
+    }
+
     if (
-      (schemeTitle || noticeTitle || incomingQuery || incomingPreprompt || mode === "eligibility" || mode === "notice") &&
+      (schemeTitle || noticeTitle || incomingDocId || incomingQuery || incomingPreprompt || mode === "eligibility" || mode === "notice") &&
       !autoPromptTriggered.current
     ) {
       autoPromptTriggered.current = true;
@@ -308,6 +315,7 @@ export const CivicAssistant: React.FC = () => {
       const cleanParams = new URLSearchParams(searchParams);
       cleanParams.delete("schemeTitle");
       cleanParams.delete("noticeTitle");
+      cleanParams.delete("documentId");
       cleanParams.delete("query");
       cleanParams.delete("preprompt");
       cleanParams.delete("mode");
@@ -449,7 +457,26 @@ export const CivicAssistant: React.FC = () => {
               }`}
             >
               {m.sender === "user" ? (
-                <p className="whitespace-pre-wrap">{m.text}</p>
+                <div className="space-y-2">
+                  {m.text.includes("Uploaded Notice:") ? (
+                    <>
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-white/10 text-xs text-stone-200 border border-white/20">
+                        <FileText className="h-3.5 w-3.5 text-stone-300 shrink-0" />
+                        <span className="font-semibold">
+                          Attached Document:{" "}
+                          {m.text.match(/Uploaded Notice:\s*"([^"]+)"/)?.[1] || "Government Notice"}
+                        </span>
+                      </div>
+                      <p className="whitespace-pre-wrap font-sans text-sm">
+                        {m.text.includes("Citizen Question:")
+                          ? m.text.split("Citizen Question:")[1].trim()
+                          : m.text}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="whitespace-pre-wrap">{m.text}</p>
+                  )}
+                </div>
               ) : (
                 <>
                   {/* Assistant Answer / Summary */}
