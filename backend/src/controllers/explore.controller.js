@@ -5,7 +5,7 @@ import { ApiError } from "../utils/apiError.js";
 import { APIResponse } from "../utils/apiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { sarvamService, toTwoLetterLang, SARVAM_LANGUAGE_NAMES } from "../services/sarvam.service.js";
-import { uploadAudioToS3, isStorageConfigured } from "../utils/s3Uploader.js";
+import { uploadAudioToS3, downloadFileBufferFromS3, isStorageConfigured } from "../utils/s3Uploader.js";
 
 /**
  * Helper to build Age Filter from UI Age Group ranges
@@ -217,9 +217,17 @@ export const getSchemeById = asyncHandler(async (req, res) => {
     }
 
     // Fetch pre-generated audio explainers & plain summaries across languages
-    const explainers = await Explainer.find({ documentId: id }).select(
+    const rawExplainers = await Explainer.find({ documentId: id }).select(
         "languageCode languageName plainSummary keyRights eligibilityCriteria citizenImpact businessImpact requiredDocuments howToApplySteps audio.audioUrl audio.durationSeconds"
     );
+
+    const explainers = rawExplainers.map((exp) => {
+        const obj = exp.toObject ? exp.toObject() : { ...exp };
+        if (obj.audio) {
+            obj.audio.audioUrl = `/api/v1/explore/${id}/audio/stream?language=${obj.languageCode}`;
+        }
+        return obj;
+    });
 
     return res.status(200).json(
         new APIResponse(
@@ -302,6 +310,7 @@ export const getOrGenerateSchemeAudio = asyncHandler(async (req, res) => {
     }
 
     const shouldRefresh = req.query?.refresh === "true" || req.body?.refresh === true;
+    const streamUrl = `/api/v1/explore/${id}/audio/stream?language=${languageCode}`;
 
     // 1. Check for existing cached audio explainer for this scheme + language
     const existingExplainer = await Explainer.findOne({
@@ -317,7 +326,7 @@ export const getOrGenerateSchemeAudio = asyncHandler(async (req, res) => {
                     documentId: id,
                     languageCode,
                     languageName: existingExplainer.languageName || SARVAM_LANGUAGE_NAMES[languageCode] || "Hindi",
-                    audioUrl: existingExplainer.audio.audioUrl,
+                    audioUrl: streamUrl,
                     durationSeconds: existingExplainer.audio.durationSeconds || 0,
                     mimeType: existingExplainer.audio.mimeType || "audio/wav",
                     voiceName: existingExplainer.audio.voiceName || "shubh",
@@ -345,7 +354,7 @@ export const getOrGenerateSchemeAudio = asyncHandler(async (req, res) => {
 
     // 3. If target language is not English, ensure summary is translated
     if (languageCode !== "en") {
-        const transResult = await sarvamService.translateText(summaryText, languageCode, "auto");
+        const transResult = await sarvamService.translateText(summaryText, languageCode, "en-IN");
         if (transResult?.translatedText) {
             summaryText = transResult.translatedText;
         }
@@ -355,16 +364,15 @@ export const getOrGenerateSchemeAudio = asyncHandler(async (req, res) => {
     const ttsResult = await sarvamService.synthesizeSpeech(summaryText, languageCode);
 
     // 5. Upload audio WAV buffer to S3 (or fallback to data URI in test/unconfigured environments)
-    let audioUrl = "";
-    let s3Key = "";
+    let s3Key = `audio/explainers/${id}-${languageCode}.wav`;
 
     if (isStorageConfigured()) {
-        const uploaded = await uploadAudioToS3(ttsResult.audioBuffer, id, languageCode);
-        audioUrl = uploaded.publicUrl;
-        s3Key = uploaded.s3Key;
-    } else {
-        audioUrl = `data:audio/wav;base64,${ttsResult.audioBuffer.toString("base64")}`;
-        s3Key = `audio/explainers/${id}-${languageCode}.wav`;
+        try {
+            const uploaded = await uploadAudioToS3(ttsResult.audioBuffer, id, languageCode);
+            s3Key = uploaded.s3Key;
+        } catch (upErr) {
+            console.error("⚠️ S3 upload fallback:", upErr.message);
+        }
     }
 
     // 6. Cache audio & plain summary in Explainer model
@@ -375,7 +383,7 @@ export const getOrGenerateSchemeAudio = asyncHandler(async (req, res) => {
             $set: {
                 languageName,
                 plainSummary: summaryText,
-                "audio.audioUrl": audioUrl,
+                "audio.audioUrl": streamUrl,
                 "audio.s3Key": s3Key,
                 "audio.mimeType": "audio/wav",
                 "audio.voiceName": ttsResult.speaker,
@@ -383,7 +391,7 @@ export const getOrGenerateSchemeAudio = asyncHandler(async (req, res) => {
                 generatedByModel: ttsResult.model,
             },
         },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: "after" }
     );
 
     return res.status(200).json(
@@ -393,7 +401,7 @@ export const getOrGenerateSchemeAudio = asyncHandler(async (req, res) => {
                 documentId: id,
                 languageCode,
                 languageName,
-                audioUrl: explainer.audio.audioUrl,
+                audioUrl: streamUrl,
                 durationSeconds: explainer.audio.durationSeconds,
                 mimeType: explainer.audio.mimeType,
                 voiceName: explainer.audio.voiceName,
@@ -404,4 +412,129 @@ export const getOrGenerateSchemeAudio = asyncHandler(async (req, res) => {
             "Audio explainer synthesized and cached successfully."
         )
     );
+});
+
+/**
+ * @desc    Stream audio WAV directly with HTTP Range and Content-Type support
+ * @route   GET /api/v1/explore/:id/audio/stream
+ * @access  Public
+ */
+export const streamSchemeAudio = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const requestedLang = req.query?.language || "hi";
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        throw new ApiError(400, "Invalid scheme document ID format.");
+    }
+
+    const languageCode = toTwoLetterLang(requestedLang);
+    const document = await Document.findById(id);
+    if (!document) {
+        throw new ApiError(404, "Scheme or policy document not found.");
+    }
+
+    let explainer = await Explainer.findOne({ documentId: id, languageCode });
+    let audioBuffer = null;
+
+    // 1. Try to download from S3 if configured
+    if (isStorageConfigured()) {
+        const s3Key = explainer?.audio?.s3Key || `audio/explainers/${id}-${languageCode}.wav`;
+        try {
+            audioBuffer = await downloadFileBufferFromS3(s3Key);
+        } catch (_s3Err) {
+            // S3 object not found or error, synthesize below
+        }
+    }
+
+    // 2. Check for base64 data URI in explainer
+    if (!audioBuffer && explainer?.audio?.audioUrl?.startsWith("data:")) {
+        try {
+            const base64Data = explainer.audio.audioUrl.split(",")[1];
+            audioBuffer = Buffer.from(base64Data, "base64");
+        } catch (_bErr) {}
+    }
+
+    // 3. If still no buffer, synthesize via Sarvam Bulbul TTS on demand
+    if (!audioBuffer) {
+        let summaryText = explainer?.plainSummary;
+        if (!summaryText) {
+            if (document.description && document.description.trim()) {
+                summaryText = document.description.trim();
+            } else {
+                const rightsStr = Array.isArray(document.keyRights) && document.keyRights.length > 0
+                    ? document.keyRights.join(". ")
+                    : "";
+                summaryText = `${document.title}. ${document.issuingAuthority ? "Issued by " + document.issuingAuthority + "." : ""} ${rightsStr}`.trim();
+            }
+        }
+
+        if (languageCode !== "en") {
+            const transResult = await sarvamService.translateText(summaryText, languageCode, "en-IN");
+            if (transResult?.translatedText) {
+                summaryText = transResult.translatedText;
+            }
+        }
+
+        const ttsResult = await sarvamService.synthesizeSpeech(summaryText, languageCode);
+        audioBuffer = ttsResult.audioBuffer;
+
+        let s3Key = `audio/explainers/${id}-${languageCode}.wav`;
+        const streamUrl = `/api/v1/explore/${id}/audio/stream?language=${languageCode}`;
+
+        if (isStorageConfigured()) {
+            try {
+                const uploaded = await uploadAudioToS3(audioBuffer, id, languageCode);
+                s3Key = uploaded.s3Key;
+            } catch (upErr) {
+                console.error("⚠️ S3 upload fallback:", upErr.message);
+            }
+        }
+
+        const languageName = SARVAM_LANGUAGE_NAMES[languageCode] || "Hindi";
+        await Explainer.findOneAndUpdate(
+            { documentId: id, languageCode },
+            {
+                $set: {
+                    languageName,
+                    plainSummary: summaryText,
+                    "audio.audioUrl": streamUrl,
+                    "audio.s3Key": s3Key,
+                    "audio.mimeType": "audio/wav",
+                    "audio.voiceName": ttsResult.speaker,
+                    "audio.durationSeconds": ttsResult.durationSeconds,
+                    generatedByModel: ttsResult.model,
+                },
+            },
+            { upsert: true, returnDocument: "after" }
+        );
+    }
+
+    if (!audioBuffer || audioBuffer.length === 0) {
+        throw new ApiError(500, "Unable to load or synthesize audio for this scheme.");
+    }
+
+    const total = audioBuffer.length;
+    res.setHeader("Content-Type", "audio/wav");
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+
+    const range = req.headers.range;
+    if (range) {
+        const parts = range.replace(/bytes=/, "").split("-");
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : total - 1;
+
+        if (start >= total || end >= total || start > end) {
+            res.setHeader("Content-Range", `bytes */${total}`);
+            return res.status(416).send("Requested range not satisfiable");
+        }
+
+        const chunk = audioBuffer.subarray(start, end + 1);
+        res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
+        res.setHeader("Content-Length", chunk.length);
+        return res.status(206).send(chunk);
+    }
+
+    res.setHeader("Content-Length", total);
+    return res.status(200).send(audioBuffer);
 });

@@ -11,7 +11,7 @@ import {
     concatWavBuffers,
     calculateWavDuration,
 } from "../src/services/sarvam.service.js";
-import { getOrGenerateSchemeAudio } from "../src/controllers/explore.controller.js";
+import { getOrGenerateSchemeAudio, streamSchemeAudio } from "../src/controllers/explore.controller.js";
 import { getOrGenerateNoticeAudio, streamNoticeAudio } from "../src/controllers/analysis.controller.js";
 import { Document } from "../src/models/document.model.js";
 import { Explainer } from "../src/models/explainer.model.js";
@@ -305,7 +305,7 @@ test("Lok-Setu Sarvam Multilingual & Voice Synthesis Suite", async (t) => {
 
             assert.equal(statusCalled, 200);
             assert.equal(jsonPayload.data.isCached, true);
-            assert.equal(jsonPayload.data.audioUrl, mockCachedExplainer.audio.audioUrl);
+            assert.equal(jsonPayload.data.audioUrl, `/api/v1/explore/${validId}/audio/stream?language=hi`);
             assert.equal(jsonPayload.data.durationSeconds, 45);
         } finally {
             Document.findById = origDoc;

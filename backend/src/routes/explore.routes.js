@@ -4,6 +4,7 @@ import {
     getSchemeById,
     getFiltersMetadata,
     getOrGenerateSchemeAudio,
+    streamSchemeAudio,
 } from "../controllers/explore.controller.js";
 
 const router = Router();
@@ -14,6 +15,9 @@ router.get("/filters-meta", getFiltersMetadata);
 // Main Explore search, multi-filters & pagination endpoint
 // e.g. GET /api/v1/explore?search=kisan&gender=female&state=Gujarat&incomeRange=below_1_lakh&page=1
 router.get("/", getExploreSchemes);
+
+// Scheme audio streaming endpoint (direct binary WAV stream with Range support)
+router.get("/:id/audio/stream", streamSchemeAudio);
 
 // Scheme audio explainer synthesis and retrieval (Sarvam Bulbul TTS)
 router.post("/:id/audio", getOrGenerateSchemeAudio);
