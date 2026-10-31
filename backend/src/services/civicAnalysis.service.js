@@ -554,8 +554,60 @@ export const analyzeCivicQuery = async (query, options = {}) => {
         }
     }
 
-    // 4. Fast-path: When zero evidence is retrieved, return insufficient evidence immediately
+    // 4. Handle zero retrieved evidence
     if (!evidenceList || evidenceList.length === 0) {
+        // If the query is a conversational greeting, pleasantry, or exploratory civic inquiry
+        if (isConversationalOrGeneralQuery(validQuery)) {
+            const steeringPrompt = buildCivicSteeringPrompt({
+                query: validQuery,
+                language: validLanguage,
+                conversationHistory,
+            });
+
+            const generatorFn = typeof options.geminiGenerator === "function"
+                ? options.geminiGenerator
+                : generateStructuredJson;
+
+            try {
+                const steeringResult = await generatorFn({
+                    prompt: steeringPrompt,
+                    responseSchema: CIVIC_ANALYSIS_SCHEMA,
+                    systemInstruction: CIVIC_STEERING_SYSTEM_INSTRUCTION,
+                    model: options.model || config.ai.model,
+                });
+
+                if (steeringResult && typeof steeringResult === "object" && steeringResult.answer) {
+                    return {
+                        answer: steeringResult.answer.trim(),
+                        language: validLanguage,
+                        summary: (steeringResult.summary || "Civic assistant conversational guidance.").trim(),
+                        sourceFacts: Array.isArray(steeringResult.sourceFacts) ? steeringResult.sourceFacts : [],
+                        interpretation: (steeringResult.interpretation || "Lok-Setu provides verified civic guidance on welfare schemes, subsidies, and government notices.").trim(),
+                        limitations: [],
+                        citations: [],
+                        insufficientEvidence: false,
+                        disclaimer: CIVIC_DISCLAIMER,
+                    };
+                }
+            } catch {
+                // If AI generation fails, fall through to guaranteed localized fallback
+            }
+
+            // Fallback to localized steering response for the requested language
+            const fallback = LOCALIZED_STEERING_FALLBACKS[validLanguage] || LOCALIZED_STEERING_FALLBACKS.en;
+            return {
+                answer: fallback.answer,
+                language: validLanguage,
+                summary: fallback.summary,
+                sourceFacts: [],
+                interpretation: fallback.interpretation,
+                limitations: [],
+                citations: [],
+                insufficientEvidence: false,
+                disclaimer: CIVIC_DISCLAIMER,
+            };
+        }
+
         return buildInsufficientEvidenceResponse(validLanguage);
     }
 

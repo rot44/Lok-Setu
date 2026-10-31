@@ -171,8 +171,8 @@ test("Lok-Setu Grounded Multilingual Civic Analysis Suite", async (t) => {
         assert.equal(citations[0].chunkId, "svanidhi_chunk_001");
     });
 
-    // ─── 4. Insufficient Evidence Behavior ────────────────────────────────────
-    await t.test("analyzeCivicQuery fast-paths to insufficient evidence when 0 documents retrieved", async () => {
+    // ─── 4. Insufficient Evidence Behavior & Conversational Steering ────────
+    await t.test("analyzeCivicQuery fast-paths to insufficient evidence when 0 documents retrieved for policy query", async () => {
         let geminiCalled = false;
         const mockGemini = async () => {
             geminiCalled = true;
@@ -186,12 +186,60 @@ test("Lok-Setu Grounded Multilingual Civic Analysis Suite", async (t) => {
             language: "en",
         });
 
-        assert.equal(geminiCalled, false, "Gemini must not be called when zero evidence is retrieved");
+        assert.equal(geminiCalled, false, "Gemini must not be called when zero evidence is retrieved for specific policy query");
         assert.equal(result.insufficientEvidence, true);
         assert.ok(result.answer.includes(EXACT_MISSING_INFO_SENTENCE));
         assert.equal(result.interpretation, EXACT_MISSING_INFO_SENTENCE);
         assert.deepEqual(result.citations, []);
         assert.equal(result.disclaimer, CIVIC_DISCLAIMER);
+    });
+
+    await t.test("analyzeCivicQuery routes conversational query 'how are you' to dynamic steering with insufficientEvidence: false", async () => {
+        let steeringCalled = false;
+        const mockGemini = async ({ systemInstruction, prompt }) => {
+            steeringCalled = true;
+            assert.ok(systemInstruction.includes("MISSION STEERING"));
+            return {
+                answer: "Hello! I am doing well, thank you. I am your Lok-Setu civic guide. How can I help you today? Are you looking for welfare schemes in healthcare, farming, or pensions, or do you have an official notice to analyze?",
+                summary: "Greeting response with civic guidance.",
+                sourceFacts: [],
+                interpretation: "Lok-Setu provides assistance with Indian government schemes and notice analysis.",
+                limitations: [],
+                referencedChunkIds: [],
+                insufficientEvidence: false,
+            };
+        };
+        const mockRetriever = async () => [];
+
+        const result = await analyzeCivicQuery("how are you", {
+            retrievalService: mockRetriever,
+            geminiGenerator: mockGemini,
+            language: "en",
+        });
+
+        assert.equal(steeringCalled, true, "Gemini steering must be invoked for conversational query");
+        assert.equal(result.insufficientEvidence, false);
+        assert.ok(result.answer.includes("Lok-Setu"));
+        assert.deepEqual(result.citations, []);
+        assert.equal(result.disclaimer, CIVIC_DISCLAIMER);
+    });
+
+    await t.test("analyzeCivicQuery gracefully uses localized fallback when generator throws on conversational query", async () => {
+        const mockGemini = async () => {
+            throw new Error("AI service rate limited");
+        };
+        const mockRetriever = async () => [];
+
+        const result = await analyzeCivicQuery("namaste", {
+            retrievalService: mockRetriever,
+            geminiGenerator: mockGemini,
+            language: "hi",
+        });
+
+        assert.equal(result.insufficientEvidence, false);
+        assert.equal(result.language, "hi");
+        assert.ok(result.answer.includes("लोक-सेतु"));
+        assert.deepEqual(result.citations, []);
     });
 
     await t.test("analyzeCivicQuery enforces exact missing-information sentence when model reports insufficient evidence", async () => {
