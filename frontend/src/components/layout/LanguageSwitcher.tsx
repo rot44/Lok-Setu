@@ -39,24 +39,24 @@ export const LanguageSwitcher: React.FC<{ className?: string }> = ({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-neel bg-white hover:bg-paper-light border border-paper-border/80 rounded-full shadow-2xs hover:border-paper-border transition-all focus:outline-none focus:ring-2 focus:ring-neel/20 cursor-pointer"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-100/80 transition-colors focus:outline-none cursor-pointer"
         aria-haspopup="true"
         aria-expanded={isOpen}
         aria-label="Select Language"
       >
-        <Globe className="h-3.5 w-3.5 text-vermilion shrink-0" />
-        <span className="font-medium text-neel">{currentLanguageMeta.nativeName}</span>
-        <ChevronDown className={cn("h-3 w-3 text-neel-muted transition-transform duration-200", isOpen && "rotate-180")} />
+        <Globe className="h-3.5 w-3.5 text-stone-400 shrink-0" />
+        <span className="font-medium text-stone-700">{currentLanguageMeta.nativeName}</span>
+        <ChevronDown className={cn("h-3 w-3 text-stone-400 transition-transform duration-200", isOpen && "rotate-180")} />
       </button>
 
       {isOpen && (
         <div
-          className="absolute right-0 mt-2 w-52 origin-top-right bg-white border border-paper-border rounded-xl shadow-editorial-lg py-1.5 z-50 focus:outline-none animate-in fade-in zoom-in-95 duration-100"
+          className="absolute right-0 mt-1.5 w-48 origin-top-right bg-white border border-stone-200 rounded-lg shadow-lg py-1 z-50 focus:outline-none animate-in fade-in zoom-in-95 duration-100"
           role="menu"
           aria-orientation="vertical"
         >
-          <div className="px-3.5 py-1.5 text-[10.5px] font-bold uppercase tracking-wider text-neel-muted/80 border-b border-paper-border/70">
-            Choose Language / भाषा चुनें
+          <div className="px-3 py-1.5 text-[10.5px] font-medium tracking-wide text-stone-400 border-b border-stone-100">
+            Select Language • भाषा
           </div>
           <div className="py-1 max-h-72 overflow-y-auto">
             {languages.map((l) => (
@@ -64,19 +64,19 @@ export const LanguageSwitcher: React.FC<{ className?: string }> = ({
                 key={l.code}
                 onClick={() => handleSelect(l.code)}
                 className={cn(
-                  "flex items-center justify-between w-full px-3.5 py-2 text-xs text-left transition-colors cursor-pointer",
+                  "flex items-center justify-between w-full px-3 py-1.5 text-xs text-left transition-colors cursor-pointer",
                   language === l.code
-                    ? "bg-neel/5 font-semibold text-vermilion"
-                    : "text-neel hover:bg-paper-light font-normal"
+                    ? "bg-stone-100 font-semibold text-stone-900"
+                    : "text-stone-600 hover:bg-stone-50 font-normal"
                 )}
                 role="menuitem"
               >
                 <div className="flex flex-col">
-                  <span className="text-xs font-semibold leading-tight">{l.nativeName}</span>
-                  <span className="text-[10px] text-neel-muted/80">{l.name}</span>
+                  <span className="text-xs leading-tight">{l.nativeName}</span>
+                  <span className="text-[10px] text-stone-400">{l.name}</span>
                 </div>
                 {language === l.code && (
-                  <Check className="h-3.5 w-3.5 text-vermilion shrink-0 ml-2" />
+                  <Check className="h-3.5 w-3.5 text-stone-900 shrink-0 ml-2" />
                 )}
               </button>
             ))}
