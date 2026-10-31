@@ -29,3 +29,23 @@ export const upload = multer({
         fileSize: 10 * 1024 * 1024, // Max 10MB per file
     },
 });
+
+const audioFileFilter = (req, file, cb) => {
+    if (
+        file.mimetype.startsWith("audio/") ||
+        file.mimetype === "application/octet-stream" ||
+        file.mimetype === "video/webm"
+    ) {
+        cb(null, true);
+    } else {
+        cb(new Error("Invalid audio file format. Please upload an audio recording."), false);
+    }
+};
+
+export const audioUpload = multer({
+    storage,
+    fileFilter: audioFileFilter,
+    limits: {
+        fileSize: 15 * 1024 * 1024, // Max 15MB per audio file
+    },
+});

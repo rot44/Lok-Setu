@@ -3,6 +3,7 @@ import { ApiError } from "../utils/apiError.js";
 
 const SARVAM_TRANSLATE_URL = "https://api.sarvam.ai/translate";
 const SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech";
+const SARVAM_STT_URL = "https://api.sarvam.ai/speech-to-text";
 
 /**
  * Mapping from Lok-Setu 2-letter ISO language codes to Sarvam BCP-47 codes.
@@ -499,6 +500,62 @@ export class SarvamService {
             speaker,
             model,
             targetLanguage: targetBcp47,
+        };
+    }
+
+    /**
+     * Transcribes speech audio using Sarvam AI Saaras v4 speech-to-text API.
+     *
+     * @param {Buffer} audioBuffer - Binary audio buffer (WAV, WEBM, MP3, etc.)
+     * @param {string} [language="hi"] - Target language hint (e.g. "hi", "gu", "mr", "en")
+     * @param {string} [filename="audio.wav"] - Filename for multipart form upload
+     * @param {string} [mimeType="audio/wav"] - Audio MIME type
+     * @returns {Promise<{ transcript: string, languageCode: string, requestId: string }>}
+     */
+    async transcribeSpeech(audioBuffer, language = "hi", filename = "audio.wav", mimeType = "audio/wav") {
+        if (!this.apiKey) {
+            throw new ApiError(503, "Sarvam AI API key is not configured.");
+        }
+        if (!audioBuffer || audioBuffer.length === 0) {
+            throw new ApiError(400, "Audio data is required for speech transcription.");
+        }
+
+        const bcp47 = toSarvamBcp47(language);
+
+        const formData = new FormData();
+        const blob = new Blob([audioBuffer], { type: mimeType });
+        formData.append("file", blob, filename);
+        formData.append("model", "saaras:v4");
+        formData.append("language_code", bcp47);
+        formData.append("mode", "transcribe");
+
+        let response;
+        try {
+            response = await this.fetchFn(SARVAM_STT_URL, {
+                method: "POST",
+                headers: {
+                    "api-subscription-key": this.apiKey,
+                },
+                body: formData,
+                signal: AbortSignal.timeout(this.timeoutMs || 25000),
+            });
+        } catch (fetchErr) {
+            throw new ApiError(502, `Sarvam STT connection error: ${fetchErr.message}`);
+        }
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new ApiError(
+                response.status >= 500 ? 502 : response.status,
+                `Sarvam STT failed (${response.status}): ${errorText}`
+            );
+        }
+
+        const data = await response.json();
+        return {
+            transcript: data.transcript ? data.transcript.trim() : "",
+            languageCode: data.language_code || bcp47,
+            requestId: data.request_id || "",
         };
     }
 }

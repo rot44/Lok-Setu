@@ -381,3 +381,36 @@ export const streamAssistantAudio = asyncHandler(async (req, res) => {
     res.setHeader("Content-Length", total);
     return res.status(200).send(audioBuffer);
 });
+
+/**
+ * @desc    Transcribe speech audio into text using Sarvam AI Saaras v4
+ * @route   POST /api/v1/assistant/transcribe
+ * @access  Public
+ */
+export const transcribeAssistantAudio = asyncHandler(async (req, res) => {
+    const file = req.file;
+    const language = req.body?.language || req.query?.language || "hi";
+
+    if (!file || !file.buffer || file.buffer.length === 0) {
+        throw new ApiError(400, "Audio file is required for voice transcription.");
+    }
+
+    const result = await sarvamService.transcribeSpeech(
+        file.buffer,
+        language,
+        file.originalname || "voice.webm",
+        file.mimetype || "audio/webm"
+    );
+
+    return res.status(200).json(
+        new APIResponse(
+            200,
+            {
+                transcript: result.transcript,
+                languageCode: result.languageCode,
+                requestId: result.requestId,
+            },
+            "Voice transcribed successfully via Sarvam AI."
+        )
+    );
+});

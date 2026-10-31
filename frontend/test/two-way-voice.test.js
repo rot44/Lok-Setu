@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BCP47_SPEECH_MAP } from "../src/hooks/useSpeechRecognition.ts";
+import { BCP47_SPEECH_MAP } from "../src/types/voice.ts";
 import { translations, SUPPORTED_LANGUAGES } from "../src/translations/index.ts";
 
 test("Lok-Setu Two-Way Regional Voice Assistant & Sarvam AI Contracts", async (t) => {
@@ -117,3 +117,4 @@ test("Lok-Setu Two-Way Regional Voice Assistant & Sarvam AI Contracts", async (t
     );
   });
 });
+

@@ -155,4 +155,21 @@ export const assistantService = {
       title,
     });
   },
+
+  transcribeAudio: async (
+    audioBlob: Blob,
+    language?: string
+  ): Promise<{ transcript: string; languageCode: string; requestId: string }> => {
+    const formData = new FormData();
+    formData.append("audio", audioBlob, "voice_query.webm");
+    if (language) {
+      formData.append("language", language);
+    }
+
+    return await api.post<{
+      transcript: string;
+      languageCode: string;
+      requestId: string;
+    }>("/assistant/transcribe", formData);
+  },
 };

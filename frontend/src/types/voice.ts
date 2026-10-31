@@ -1,6 +1,17 @@
 export const PLAYBACK_RATES = [0.75, 1.0, 1.25, 1.5] as const;
 export type PlaybackRate = (typeof PLAYBACK_RATES)[number];
 
+export const BCP47_SPEECH_MAP: Record<string, string> = {
+  hi: "hi-IN",
+  en: "en-IN",
+  gu: "gu-IN",
+  mr: "mr-IN",
+  bn: "bn-IN",
+  ta: "ta-IN",
+  te: "te-IN",
+  kn: "kn-IN",
+};
+
 export interface AudioTrack {
   id: string;
   title: string;

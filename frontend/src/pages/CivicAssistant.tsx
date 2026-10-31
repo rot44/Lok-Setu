@@ -3,7 +3,6 @@ import { useSearchParams } from "react-router-dom";
 import {
   MessageSquare,
   Send,
-  ShieldAlert,
   Sparkles,
   ExternalLink,
   RotateCcw,
@@ -63,7 +62,7 @@ export const CivicAssistant: React.FC = () => {
   const [lastAttemptedQuery, setLastAttemptedQuery] = useState<string>("");
   const { currentTrack, isPlaying, playTrack, togglePlayPause } = useAudio();
   const [loadingAudioId, setLoadingAudioId] = useState<string | null>(null);
-  const [voiceAutoPlay, setVoiceAutoPlay] = useState<boolean>(true);
+  const voiceAutoPlay = true;
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const autoPromptTriggered = useRef(false);
 
@@ -170,17 +169,15 @@ export const CivicAssistant: React.FC = () => {
     [inputText, loading, language, sessionId, lastAttemptedQuery, voiceAutoPlay, handlePlayAssistantVoice]
   );
 
-  // Universal Speech Recognition Hook (Two-Way Voice)
+  // Universal Speech Recognition Hook (Two-Way Voice powered by Sarvam AI)
   const {
-    isSupported: isSpeechSupported,
     isListening,
+    isTranscribing,
     startListening,
     stopListening,
     resetTranscript,
   } = useSpeechRecognition({
     language,
-    interimResults: true,
-    continuous: false,
     onResult: (transcriptText) => {
       setInputText(transcriptText);
     },
@@ -311,17 +308,9 @@ export const CivicAssistant: React.FC = () => {
             <MessageSquare className="h-5 w-5 text-mustard" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-serif font-bold text-neel text-base">
-                {t("nav.assistant")}
-              </h2>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-sage/40 text-neel border border-sage">
-                <Sparkles className="h-2.5 w-2.5 text-vermilion" /> Grounded RAG
-              </span>
-              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-vermilion/10 text-vermilion border border-vermilion/30">
-                <Mic className="h-2.5 w-2.5" /> Two-Way Voice
-              </span>
-            </div>
+            <h2 className="font-serif font-bold text-neel text-base">
+              {t("nav.assistant")}
+            </h2>
             <span className="text-[11px] text-neel-muted font-medium block">
               Grounded strictly in verified Indian government gazettes & policies
             </span>
@@ -329,42 +318,17 @@ export const CivicAssistant: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Voice Auto-Reply Toggle */}
-          <button
-            type="button"
-            onClick={() => setVoiceAutoPlay(!voiceAutoPlay)}
-            className={cn(
-              "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors border cursor-pointer",
-              voiceAutoPlay
-                ? "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
-                : "bg-stone-50 text-stone-500 border-stone-200 hover:bg-stone-100"
-            )}
-            title={
-              voiceAutoPlay
-                ? "Sarvam AI Voice auto-reply is ON"
-                : "Sarvam AI Voice auto-reply is OFF"
-            }
-          >
-            <Volume2 className={cn("h-3.5 w-3.5", voiceAutoPlay ? "text-emerald-600" : "text-stone-400")} />
-            <span className="hidden md:inline">{t("assistant.voiceAutoReply", "Voice Reply")}</span>
-            <span className={cn("h-1.5 w-1.5 rounded-full", voiceAutoPlay ? "bg-emerald-500" : "bg-stone-300")} />
-          </button>
           {messages.length > 0 && (
             <Button
               variant="outline"
               size="sm"
               onClick={handleResetSession}
               leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
-              className="text-xs hidden sm:flex"
+              className="text-xs"
             >
               New Chat
             </Button>
           )}
-
-          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded bg-paper-dark text-[11px] font-semibold text-neel-muted border border-paper-border">
-            <ShieldAlert className="h-3.5 w-3.5 text-mustard-dark shrink-0" />
-            <span>Informational Guidance Only</span>
-          </div>
         </div>
       </div>
 
@@ -586,24 +550,31 @@ export const CivicAssistant: React.FC = () => {
       )}
 
       {/* Listening Status Banner */}
-      {isListening && (
-        <div className="px-4 py-2.5 bg-red-50/90 border-t border-red-200 flex items-center justify-between text-xs text-red-700 animate-in fade-in duration-150">
+      {/* Voice Status Banner */}
+      {(isListening || isTranscribing) && (
+        <div className="px-4 py-2.5 bg-amber-50/90 border-t border-amber-200 flex items-center justify-between text-xs text-amber-900 animate-in fade-in duration-150">
           <div className="flex items-center gap-2">
             <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-vermilion opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-vermilion"></span>
             </span>
             <span className="font-medium">
-              {t("assistant.listening", "Listening... Speak in your language")}
+              {isTranscribing
+                ? "Transcribing your voice..."
+                : isHindi
+                ? "सुन रहे हैं... बोलिए (बोलना समाप्त होने पर माइक दबाएं)"
+                : "Listening to your voice... Speak now (Tap mic when done)"}
             </span>
           </div>
-          <button
-            type="button"
-            onClick={stopListening}
-            className="px-2.5 py-1 rounded bg-red-100 hover:bg-red-200 text-red-800 font-semibold text-[11px] transition-colors cursor-pointer"
-          >
-            {t("assistant.stopListening", "Done speaking")}
-          </button>
+          {isListening && (
+            <button
+              type="button"
+              onClick={stopListening}
+              className="px-2.5 py-1 rounded bg-stone-900 text-white font-medium text-[11px] hover:bg-stone-800 transition-colors cursor-pointer"
+            >
+              Done
+            </button>
+          )}
         </div>
       )}
 
@@ -615,30 +586,34 @@ export const CivicAssistant: React.FC = () => {
         }}
         className="p-3 sm:p-4 bg-white border-t border-paper-border flex items-center gap-2 shrink-0"
       >
-        {/* Two-Way Microphone Button */}
+        {/* Microphone Button */}
         <button
           type="button"
           onClick={handleToggleVoiceInput}
-          disabled={loading}
+          disabled={loading || isTranscribing}
           className={cn(
             "flex items-center justify-center h-10 w-10 rounded-md transition-all shrink-0 focus:outline-none focus:ring-2 focus:ring-neel cursor-pointer",
             isListening
-              ? "bg-red-600 text-white shadow-md animate-pulse hover:bg-red-700"
+              ? "bg-vermilion text-white shadow-sm animate-pulse hover:bg-vermilion-dark"
+              : isTranscribing
+              ? "bg-amber-100 text-amber-800"
               : "bg-paper-light border border-paper-border text-stone-700 hover:text-stone-900 hover:bg-stone-100"
           )}
           title={
-            !isSpeechSupported
-              ? "Voice input available in Chrome, Safari & Edge"
-              : isListening
-              ? t("assistant.stopListening", "Done speaking")
-              : t("assistant.voiceInput", "Speak your question (Microphone)")
+            isListening
+              ? "Stop listening"
+              : isTranscribing
+              ? "Transcribing..."
+              : "Speak your question"
           }
-          aria-label="Toggle voice input"
+          aria-label="Toggle microphone"
         >
-          {isListening ? (
-            <MicOff className="h-4 w-4" />
+          {isTranscribing ? (
+            <Loader2 className="h-4 w-4 animate-spin text-amber-700" />
+          ) : isListening ? (
+            <MicOff className="h-4 w-4 text-white" />
           ) : (
-            <Mic className="h-4 w-4 text-vermilion" />
+            <Mic className="h-4 w-4 text-stone-700" />
           )}
         </button>
 
@@ -650,18 +625,20 @@ export const CivicAssistant: React.FC = () => {
             isListening
               ? isHindi
                 ? "सुन रहे हैं... बोलिए..."
-                : "Listening... speak now..."
+                : "Listening to your voice... speak now..."
+              : isTranscribing
+              ? "Transcribing..."
               : isHindi
-              ? "सरकारी योजनाओं, अधिकारों या सब्सिडी के बारे में प्रश्न पूछें या माइक दबाकर बोलें..."
-              : "Ask a question or tap the mic to speak in your language..."
+              ? "सरकारी योजनाओं या अधिकारों के बारे में पूछें या माइक दबाएं..."
+              : "Ask a question about government welfare, or tap the mic to speak..."
           }
-          disabled={loading}
+          disabled={loading || isTranscribing}
           className="flex-1 bg-paper-light text-neel placeholder:text-neel-muted/60 text-sm rounded border border-paper-border px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-neel disabled:opacity-50"
         />
         <Button
           type="submit"
           variant="primary"
-          disabled={!inputText.trim() || loading}
+          disabled={!inputText.trim() || loading || isTranscribing}
           rightIcon={<Send className="h-4 w-4" />}
           className="shrink-0"
         >
