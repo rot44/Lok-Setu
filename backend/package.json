@@ -13,6 +13,7 @@
     "seed:schemes": "node src/scripts/seedRealSchemes.js",
     "seed:multitier": "node src/scripts/seedStateAndMunicipalPolicies.js",
     "seed:full": "node src/scripts/seedFullGovCatalog.js",
+    "seed:panindia": "node src/scripts/seedPanIndiaAllStatesCatalog.js",
     "sync:pib": "node src/scripts/syncPibNotifications.js",
     "sync:gov": "node src/scripts/runGovSync.js",
     "worker:gov": "node src/workers/governmentSync.worker.js",

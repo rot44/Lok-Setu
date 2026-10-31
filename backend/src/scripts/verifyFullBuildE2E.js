@@ -46,7 +46,7 @@ async function runE2EVerification() {
 
         // ─── SUITE 2: Multi-Tier Live Notifications ─────────────────────────────
         try {
-            const res = await fetch(`${baseUrl}/notifications?days=7`);
+            const res = await fetch(`${baseUrl}/notifications?days=7&limit=100`);
             const data = await res.json();
             const total = data.data?.totalCount || 0;
             const hasCentral = data.data?.notifications?.some(
