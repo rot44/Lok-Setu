@@ -191,7 +191,11 @@ export const generateStructuredJson = async ({
                 error?.message?.includes("timeout") ||
                 error?.message?.includes("fetch failed") ||
                 error?.message?.includes("429") ||
-                error?.message?.includes("RESOURCE_EXHAUSTED");
+                error?.message?.includes("RESOURCE_EXHAUSTED") ||
+                error?.message?.includes("503") ||
+                error?.message?.includes("UNAVAILABLE") ||
+                error?.message?.includes("high demand") ||
+                error?.message?.includes("overloaded");
 
             if (isTransientError && attempt < candidateModels.length - 1) {
                 console.warn(`⚠️ [Gemini] Model ${activeModel} encountered transient error (${error?.message?.slice(0, 80)}). Retrying with fallback ${candidateModels[attempt + 1]}...`);
