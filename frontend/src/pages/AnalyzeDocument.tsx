@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   UploadCloud,
   FileText,
@@ -18,6 +18,7 @@ import {
   Volume2,
   VolumeX,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
@@ -34,8 +35,9 @@ type ProcessingStep = "idle" | "uploading" | "analyzing" | "completed" | "ocr_re
 
 export const AnalyzeDocument: React.FC = () => {
   const { language, t } = useLanguage();
-  const { isAuthenticated, isInitialized } = useAuth();
+  const { isAuthenticated, isInitialized, profile } = useAuth();
   const { currentTrack, isPlaying, playTrack, togglePlayPause } = useAudio();
+  const navigate = useNavigate();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSynthesizingAudio, setIsSynthesizingAudio] = useState<boolean>(false);
@@ -48,6 +50,44 @@ export const AnalyzeDocument: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const isCurrentNoticePlaying = Boolean(documentId && currentTrack?.id === documentId && isPlaying);
+
+  const handleAskAiMore = (specificQuery?: string) => {
+    if (!analysis) return;
+
+    const docName = selectedFile?.name || "Official Government Notice";
+
+    // Build citizen demographic context from active profile
+    const profileParts: string[] = [];
+    if (profile) {
+      if (profile.state) profileParts.push(`State: ${profile.state}`);
+      if (profile.city) profileParts.push(`City: ${profile.city}`);
+      if (profile.occupation && profile.occupation !== "other") profileParts.push(`Occupation: ${profile.occupation}`);
+      if (profile.isBusinessOwner) profileParts.push("Small Business / MSME Owner");
+      if (profile.isFarmer) profileParts.push("Farmer");
+    }
+    const citizenContext = profileParts.length > 0 ? `[Citizen Profile: ${profileParts.join(", ")}]\n` : "";
+
+    // Build concise notice summary and extracted facts
+    const shortSummary = analysis.summary.length > 280 ? analysis.summary.slice(0, 280) + "..." : analysis.summary;
+    const deadlines = analysis.datesAndDeadlines?.slice(0, 2).join("; ");
+    const rights = analysis.keyRights?.slice(0, 2).join("; ");
+    const penalties = analysis.penalties?.slice(0, 2).join("; ");
+
+    const askQuery = specificQuery || (
+      language === "hi"
+        ? `कृपया मुझे बताएं कि इस नोटिस "${docName}" के आधार पर मुझे क्या कानूनी अधिकार प्राप्त हैं और मुझे तुरंत क्या कदम उठाने चाहिए?`
+        : `Please explain this notice "${docName}" in detail: what are my citizen rights, what immediate steps should I take, and how do I comply or appeal?`
+    );
+
+    const fullPreprompt = `${citizenContext}Uploaded Notice: "${docName}"
+Notice Summary: ${shortSummary}
+${deadlines ? `Key Deadlines: ${deadlines}\n` : ""}${rights ? `Stated Rights: ${rights}\n` : ""}${penalties ? `Penalties/Demands: ${penalties}\n` : ""}
+Citizen Question: ${askQuery}`.trim();
+
+    navigate(
+      `/assistant?noticeTitle=${encodeURIComponent(docName)}&preprompt=${encodeURIComponent(fullPreprompt)}&autoSend=1`
+    );
+  };
 
   const handlePlayNoticeAudio = async () => {
     if (!documentId) return;
@@ -366,10 +406,20 @@ export const AnalyzeDocument: React.FC = () => {
                 Grounded Analysis
               </span>
             </div>
-            <Button variant="outline" size="sm" onClick={handleReset}>
-              <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-              Analyze Another Document
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleAskAiMore()}
+                leftIcon={<Sparkles className="h-3.5 w-3.5 text-mustard-light" />}
+              >
+                {language === "hi" ? "सिविक AI से प्रश्न पूछें" : "Ask Civic AI More"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleReset}>
+                <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
+                {language === "hi" ? "अन्य दस्तावेज" : "Analyze Another"}
+              </Button>
+            </div>
           </div>
 
           {/* Plain-Language Summary */}
@@ -643,6 +693,79 @@ export const AnalyzeDocument: React.FC = () => {
               </CardContent>
             </Card>
           )}
+
+          {/* Ask AI Follow-up Section */}
+          <Card className="bg-gradient-to-br from-paper-light via-white to-amber-50/20 border-paper-border space-y-3">
+            <CardHeader>
+              <div className="flex items-center gap-2 text-neel">
+                <Sparkles className="h-4 w-4 text-vermilion" />
+                <CardTitle className="text-base">
+                  {language === "hi" ? "इस नोटिस के बारे में और प्रश्न पूछें" : "Have Questions About This Notice?"}
+                </CardTitle>
+              </div>
+              <CardDescription>
+                {language === "hi"
+                  ? "लोक-सेतु सिविक AI से अपने अधिकारों, अपील प्रक्रिया या अपनी प्रोफाइल के अनुसार व्यक्तिगत मार्गदर्शन लें।"
+                  : "Chat with Lok-Setu Civic AI to get step-by-step guidance, appeal procedures, or advice tailored to your citizen profile."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-0">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleAskAiMore(
+                      language === "hi"
+                        ? "इस नोटिस के खिलाफ अपील या आपत्ति दर्ज करने की सही प्रक्रिया और समयसीमा क्या है?"
+                        : "What is the exact procedure and deadline to file an appeal or objection against this notice?"
+                    )
+                  }
+                  className="text-xs px-3 py-2 rounded-lg border border-paper-border bg-white hover:border-vermilion hover:bg-paper-light transition-all text-neel text-left font-medium flex items-center gap-2 group cursor-pointer"
+                >
+                  <HelpCircle className="h-3.5 w-3.5 text-mustard-dark shrink-0 group-hover:text-vermilion" />
+                  <span>{language === "hi" ? "अपील या आपत्ति कैसे दर्ज करें?" : "How do I file an appeal or objection?"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleAskAiMore(
+                      language === "hi"
+                        ? "क्या प्रशासन बिना सुनवाई के कोई दंडात्मक कार्रवाई या सेवा बंद कर सकता है?"
+                        : "Can authorities take coercive recovery action or disconnect services without a hearing?"
+                    )
+                  }
+                  className="text-xs px-3 py-2 rounded-lg border border-paper-border bg-white hover:border-vermilion hover:bg-paper-light transition-all text-neel text-left font-medium flex items-center gap-2 group cursor-pointer"
+                >
+                  <HelpCircle className="h-3.5 w-3.5 text-mustard-dark shrink-0 group-hover:text-vermilion" />
+                  <span>{language === "hi" ? "क्या बिना सुनवाई कार्रवाई हो सकती है?" : "Can authorities take action without a hearing?"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleAskAiMore(
+                      language === "hi"
+                        ? "मुझे कौन-से दस्तावेज और साक्ष्य तैयार करके संबंधित विभाग में जमा करने चाहिए?"
+                        : "What supporting documents and evidence should I prepare and submit to the department?"
+                    )
+                  }
+                  className="text-xs px-3 py-2 rounded-lg border border-paper-border bg-white hover:border-vermilion hover:bg-paper-light transition-all text-neel text-left font-medium flex items-center gap-2 group cursor-pointer"
+                >
+                  <HelpCircle className="h-3.5 w-3.5 text-mustard-dark shrink-0 group-hover:text-vermilion" />
+                  <span>{language === "hi" ? "कौन-से दस्तावेज जमा करने होंगे?" : "What documents should I prepare?"}</span>
+                </button>
+              </div>
+              <div className="pt-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => handleAskAiMore()}
+                  leftIcon={<Sparkles className="h-4 w-4 text-mustard-light" />}
+                >
+                  {language === "hi" ? "सिविक AI से पूरी चर्चा शुरू करें" : "Chat with Civic AI About This Document"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Mandatory Disclaimer */}
           <div className="p-4 rounded-lg bg-paper border border-paper-border text-center text-xs text-neel-muted space-y-1">

@@ -51,6 +51,25 @@ const SUGGESTED_QUERIES = [
   },
 ];
 
+const NOTICE_SUGGESTED_QUERIES = [
+  {
+    en: "What immediate action should I take to comply with or appeal this notice?",
+    hi: "इस नोटिस का पालन करने या अपील करने के लिए मुझे तुरंत क्या कदम उठाने चाहिए?",
+  },
+  {
+    en: "Can authorities take coercive recovery action or disconnect services without a hearing?",
+    hi: "क्या अधिकारी बिना सुनवाई के मेरे लाभ रोक सकते हैं या दंडात्मक कार्रवाई कर सकते हैं?",
+  },
+  {
+    en: "What is the exact appeal deadline and which official office handles objections?",
+    hi: "अपील की अंतिम तिथि क्या है और आपत्ति दर्ज करने के लिए किस कार्यालय में जाना होगा?",
+  },
+  {
+    en: "What supporting documents and evidence should I prepare and submit?",
+    hi: "मुझे कौन-से दस्तावेज और साक्ष्य तैयार करके संबंधित विभाग में जमा करने चाहिए?",
+  },
+];
+
 export const CivicAssistant: React.FC = () => {
   const { language, t } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -241,26 +260,41 @@ export const CivicAssistant: React.FC = () => {
   // Auto-prompt handler when arriving with a specific scheme, preprompt or query
   useEffect(() => {
     const schemeTitle = searchParams.get("schemeTitle");
+    const noticeTitle = searchParams.get("noticeTitle");
     const incomingQuery = searchParams.get("query");
     const incomingPreprompt = searchParams.get("preprompt");
     const mode = searchParams.get("mode");
     const autoSend =
       searchParams.get("autoSend") === "1" || searchParams.get("autoSend") === "true";
 
-    if ((schemeTitle || incomingQuery || incomingPreprompt || mode === "eligibility") && !autoPromptTriggered.current) {
+    if (
+      (schemeTitle || noticeTitle || incomingQuery || incomingPreprompt || mode === "eligibility" || mode === "notice") &&
+      !autoPromptTriggered.current
+    ) {
       autoPromptTriggered.current = true;
-      const targetTitle = schemeTitle ? decodeURIComponent(schemeTitle) : "";
+      const targetTitle = noticeTitle
+        ? decodeURIComponent(noticeTitle)
+        : schemeTitle
+        ? decodeURIComponent(schemeTitle)
+        : "";
       
       let generatedPrompt = "";
       if (incomingPreprompt) {
         generatedPrompt = decodeURIComponent(incomingPreprompt);
       } else if (incomingQuery) {
         generatedPrompt = decodeURIComponent(incomingQuery);
+      } else if (noticeTitle) {
+        generatedPrompt =
+          language === "hi"
+            ? `कृपया मुझे सरकारी नोटिस "${targetTitle}" के बारे में विस्तार से समझाएं: मेरे क्या अधिकार हैं, अपील की क्या प्रक्रिया है और मुझे क्या करना चाहिए?`
+            : `Explain this government notice in detail: "${targetTitle}". What are my citizen rights, appeal procedures, and action steps?`;
       } else if (targetTitle) {
         generatedPrompt = buildSchemeExplanationPrompt(targetTitle, language);
       }
 
-      if (targetTitle) {
+      if (noticeTitle) {
+        setActiveSchemeBadge(`Notice: ${targetTitle}`);
+      } else if (targetTitle) {
         setActiveSchemeBadge(targetTitle);
       } else if (mode === "eligibility") {
         setActiveSchemeBadge(
@@ -273,6 +307,7 @@ export const CivicAssistant: React.FC = () => {
       // Clean URL params quietly so back/reload does not resend
       const cleanParams = new URLSearchParams(searchParams);
       cleanParams.delete("schemeTitle");
+      cleanParams.delete("noticeTitle");
       cleanParams.delete("query");
       cleanParams.delete("preprompt");
       cleanParams.delete("mode");
@@ -333,13 +368,16 @@ export const CivicAssistant: React.FC = () => {
         </div>
       </div>
 
-      {/* Active Scheme Context Banner */}
+      {/* Active Scheme / Notice Context Banner */}
       {activeSchemeBadge && (
         <div className="px-5 py-2.5 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-mustard/30 flex items-center justify-between text-xs text-neel animate-in fade-in">
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-vermilion shrink-0" />
             <span>
-              Explaining Scheme: <strong className="font-semibold text-neel">{activeSchemeBadge}</strong>
+              {activeSchemeBadge.startsWith("Notice:") ? "Notice Context: " : "Explaining Scheme: "}
+              <strong className="font-semibold text-neel">
+                {activeSchemeBadge.replace(/^Notice:\s*/, "")}
+              </strong>
             </span>
           </div>
           <button
@@ -363,7 +401,13 @@ export const CivicAssistant: React.FC = () => {
 
             <div className="space-y-2">
               <h3 className="font-serif text-xl sm:text-2xl font-bold text-neel">
-                {isHindi ? "आप किस सरकारी योजना के बारे में जानना चाहते हैं?" : "How can Lok-Setu help you today?"}
+                {activeSchemeBadge?.startsWith("Notice:")
+                  ? isHindi
+                    ? "इस सरकारी नोटिस के बारे में प्रश्न पूछें"
+                    : "Ask questions about this government notice"
+                  : isHindi
+                  ? "आप किस सरकारी योजना के बारे में जानना चाहते हैं?"
+                  : "How can Lok-Setu help you today?"}
               </h3>
               <p className="text-xs sm:text-sm text-neel-muted leading-relaxed">
                 {isHindi
@@ -374,14 +418,14 @@ export const CivicAssistant: React.FC = () => {
 
             {/* Suggested Prompt Chips */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 text-left">
-              {SUGGESTED_QUERIES.map((q, idx) => {
+              {(activeSchemeBadge?.startsWith("Notice:") ? NOTICE_SUGGESTED_QUERIES : SUGGESTED_QUERIES).map((q, idx) => {
                 const queryPrompt = isHindi ? q.hi : q.en;
                 return (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => handleSend(queryPrompt)}
-                    className="p-3 rounded border border-paper-border bg-white hover:border-vermilion hover:bg-paper-light transition-all text-left text-xs font-medium text-neel shadow-xs flex items-start gap-2 group"
+                    className="p-3 rounded border border-paper-border bg-white hover:border-vermilion hover:bg-paper-light transition-all text-left text-xs font-medium text-neel shadow-xs flex items-start gap-2 group cursor-pointer"
                   >
                     <HelpCircle className="h-4 w-4 text-mustard-dark shrink-0 mt-0.5 group-hover:text-vermilion" />
                     <span className="line-clamp-2">{queryPrompt}</span>
