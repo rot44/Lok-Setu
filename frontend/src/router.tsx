@@ -47,6 +47,10 @@ export const router = createBrowserRouter([
         element: <CivicAssistant />,
       },
       {
+        path: "civic-assistant",
+        element: <CivicAssistant />,
+      },
+      {
         path: "notifications",
         element: <NotificationsFeed />,
       },

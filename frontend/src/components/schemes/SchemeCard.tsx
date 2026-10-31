@@ -214,7 +214,7 @@ export const SchemeCard: React.FC<SchemeCardProps> = ({ scheme }) => {
           </button>
 
           <Link
-            to={`/civic-assistant?schemeTitle=${encodeURIComponent(scheme.title)}&autoSend=1`}
+            to={`/assistant?schemeTitle=${encodeURIComponent(scheme.title)}&autoSend=1`}
             className="p-1.5 text-mustard-dark hover:text-vermilion hover:bg-amber-50 rounded transition-colors"
             title={`Ask AI to explain ${scheme.title}`}
             aria-label={`Ask AI about ${scheme.title}`}

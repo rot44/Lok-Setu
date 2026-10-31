@@ -227,7 +227,7 @@ export const SchemeDetailPage: React.FC = () => {
             size="sm"
             onClick={() => {
               navigate(
-                `/civic-assistant?schemeTitle=${encodeURIComponent(scheme.title)}&autoSend=1`
+                `/assistant?schemeTitle=${encodeURIComponent(scheme.title)}&autoSend=1`
               );
             }}
             leftIcon={<Sparkles className="h-3.5 w-3.5 text-mustard-dark" />}
@@ -442,7 +442,7 @@ export const SchemeDetailPage: React.FC = () => {
               size="sm"
               onClick={() => {
                 navigate(
-                  `/civic-assistant?schemeTitle=${encodeURIComponent(scheme.title)}&autoSend=1`
+                  `/assistant?schemeTitle=${encodeURIComponent(scheme.title)}&autoSend=1`
                 );
               }}
               className="shrink-0 bg-neel hover:bg-neel-dark text-white text-xs font-semibold shadow-xs"
