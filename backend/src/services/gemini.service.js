@@ -143,7 +143,7 @@ export const generateStructuredJson = async ({
 }) => {
     const client = clientOverride || getGeminiClient();
 
-    try {
+    const executeCall = async () => {
         const combinedSystemInstruction = systemInstruction
             ? `${CIVIC_GROUNDING_INSTRUCTION}\n\n${systemInstruction}\nYou MUST output valid JSON matching the specified structure.`
             : `${CIVIC_GROUNDING_INSTRUCTION}\nYou MUST output valid JSON matching the specified structure.`;
@@ -174,10 +174,32 @@ export const generateStructuredJson = async ({
         } catch (_parseError) {
             throw new ApiError(500, "Gemini output could not be parsed as valid JSON.");
         }
-    } catch (error) {
-        if (error instanceof ApiError) throw error;
-        throw handleGeminiError(error, "structured JSON generation");
+    };
+
+    // Retry once if transient network timeout or DEADLINE_EXCEEDED occurs
+    let lastError = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+            return await executeCall();
+        } catch (error) {
+            lastError = error;
+            const isTransientTimeout =
+                error?.message?.includes("DEADLINE_EXCEEDED") ||
+                error?.message?.includes("timeout") ||
+                error?.message?.includes("fetch failed");
+
+            if (isTransientTimeout && attempt < 2) {
+                console.warn(`⚠️ [Gemini] Structured JSON request timed out on attempt ${attempt}. Retrying with fresh call...`);
+                geminiClientInstance = null; // Reset singleton to clear hanging socket
+                await new Promise((r) => setTimeout(r, 1500));
+                continue;
+            }
+            break;
+        }
     }
+
+    if (lastError instanceof ApiError) throw lastError;
+    throw handleGeminiError(lastError, "structured JSON generation");
 };
 
 /**

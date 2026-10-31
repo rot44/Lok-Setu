@@ -52,6 +52,7 @@ export const CivicAssistant: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(() => getStoredSessionId());
   const [activeSchemeBadge, setActiveSchemeBadge] = useState<string | null>(null);
+  const [lastAttemptedQuery, setLastAttemptedQuery] = useState<string>("");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const autoPromptTriggered = useRef(false);
 
@@ -94,9 +95,10 @@ export const CivicAssistant: React.FC = () => {
 
   const handleSend = useCallback(
     async (queryText?: string) => {
-      const textToSend = (queryText || inputText).trim();
+      const textToSend = (queryText || inputText || lastAttemptedQuery).trim();
       if (!textToSend || loading) return;
 
+      setLastAttemptedQuery(textToSend);
       setError(null);
       setLoading(true);
 
@@ -110,9 +112,7 @@ export const CivicAssistant: React.FC = () => {
       };
 
       setMessages((prev) => [...prev, optimisticUserMessage]);
-      if (!queryText) {
-        setInputText(""); // Clear input when explicitly typing
-      }
+      setInputText("");
 
       try {
         const response = await assistantService.sendMessage({
@@ -130,17 +130,15 @@ export const CivicAssistant: React.FC = () => {
         const errorMsg =
           err instanceof Error ? err.message : "Failed to generate answer. Please try again.";
         setError(errorMsg);
-        // Restore user text if it failed so they can retry without retyping
-        if (!queryText) {
-          setInputText(textToSend);
-        }
+        // Restore user text on failure so user can edit or retry
+        setInputText(textToSend);
         // Remove optimistic message on failure
         setMessages((prev) => prev.filter((m) => m.id !== optimisticUserMessage.id));
       } finally {
         setLoading(false);
       }
     },
-    [inputText, loading, language, sessionId]
+    [inputText, loading, language, sessionId, lastAttemptedQuery]
   );
 
   // Auto-prompt handler when arriving with a specific scheme or query from Explore/Scheme Details
@@ -410,7 +408,7 @@ export const CivicAssistant: React.FC = () => {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => handleSend()}
+            onClick={() => handleSend(lastAttemptedQuery || inputText)}
             className="text-xs h-7 border-vermilion text-vermilion hover:bg-vermilion hover:text-white shrink-0"
           >
             Retry
