@@ -3,6 +3,13 @@ import { generateStructuredJson } from "./gemini.service.js";
 import { indexingService } from "./indexing.service.js";
 import { DOCUMENT_TYPES, JURISDICTION_LEVELS } from "../constants.js";
 import { parsePibRssXml, extractPibReleaseContent } from "./pibWatcher.service.js";
+import {
+    governmentSourceRegistry,
+    CONNECTOR_TYPES,
+    SOURCE_LIFECYCLE_STAGES,
+    STATE_CODE_TO_NAME_MAP,
+} from "./sourceRegistry.service.js";
+import { fetchAndNormalizeSource, getConnectorForSource } from "./connectors/index.js";
 import crypto from "crypto";
 
 /**
@@ -599,6 +606,94 @@ export const computeContentHash = (title = "", text = "") => {
  * Autonomous Government Schemes Synchronizer Service.
  * Manages continuous ingestion across Central PIB bureaus, Regional State bureaus, and all 36 States/UTs.
  */
+/**
+ * Evaluates whether a government source definition is eligible for automated synchronization.
+ *
+ * Requirements:
+ * 1. Must be a valid object with non-empty id and officialSourceUrl.
+ * 2. isEnabled must be explicitly true.
+ * 3. coverageStatus must be in an operational/configured lifecycle stage (not blocked_or_unavailable, discovered, or url_verified).
+ * 4. connectorType must be a recognized, implemented connector type.
+ *
+ * @param {Object} sourceDef
+ * @returns {boolean}
+ */
+export function isSourceEligibleForSync(sourceDef) {
+    if (!sourceDef || typeof sourceDef !== "object") return false;
+    if (!sourceDef.id || typeof sourceDef.id !== "string" || !sourceDef.id.trim()) return false;
+    if (!sourceDef.isEnabled) return false;
+    if (!sourceDef.officialSourceUrl || typeof sourceDef.officialSourceUrl !== "string" || !sourceDef.officialSourceUrl.trim()) {
+        return false;
+    }
+
+    // Reject blocked, unavailable, discovered, or unverified lifecycle stages
+    const activeLifecycleStages = [
+        SOURCE_LIFECYCLE_STAGES.CONFIGURED,
+        SOURCE_LIFECYCLE_STAGES.SYNCHRONIZED,
+        SOURCE_LIFECYCLE_STAGES.CONNECTOR_IMPLEMENTED,
+        "active",
+    ];
+    if (!activeLifecycleStages.includes(sourceDef.coverageStatus)) {
+        return false;
+    }
+
+    // Must map to an implemented modular connector
+    const implementedConnectors = [
+        CONNECTOR_TYPES.PIB_RSS,
+        CONNECTOR_TYPES.GAZETTE_RSS,
+        CONNECTOR_TYPES.API_REST,
+        CONNECTOR_TYPES.PORTAL_SCRAPER,
+        CONNECTOR_TYPES.CUSTOM_FEED,
+    ];
+    if (!implementedConnectors.includes(sourceDef.connectorType)) {
+        return false;
+    }
+
+    // Verify connector can be resolved
+    try {
+        getConnectorForSource(sourceDef);
+    } catch (_err) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Filters registered government sources to find those eligible for automated synchronization.
+ *
+ * @param {Object} [options]
+ * @param {GovernmentSourceRegistry} [options.registry=governmentSourceRegistry]
+ * @param {string[]} [options.sourceIds]
+ * @param {string} [options.jurisdictionLevel]
+ * @param {string} [options.stateCode]
+ * @returns {Array<Object>}
+ */
+export function getEligibleSourcesForSync({
+    registry = governmentSourceRegistry,
+    sourceIds,
+    jurisdictionLevel,
+    stateCode,
+} = {}) {
+    let sources = registry.getAllSources();
+
+    if (Array.isArray(sourceIds) && sourceIds.length > 0) {
+        sources = sources.filter((s) => sourceIds.includes(s.id));
+    }
+
+    if (jurisdictionLevel && typeof jurisdictionLevel === "string") {
+        const jl = jurisdictionLevel.trim().toLowerCase();
+        sources = sources.filter((s) => s.jurisdictionLevel.toLowerCase() === jl);
+    }
+
+    if (stateCode && typeof stateCode === "string") {
+        const sc = stateCode.trim().toUpperCase();
+        sources = sources.filter((s) => s.stateCode === sc || (s.stateCode === "ALL" && s.jurisdictionLevel === JURISDICTION_LEVELS.CENTRAL));
+    }
+
+    return sources.filter(isSourceEligibleForSync);
+}
+
 export const governmentSyncService = {
     /**
      * Polls and synchronizes PIB press releases across regional bureaus.
@@ -789,38 +884,363 @@ If NO: Set isCivicPolicyOrWelfare to false.
     },
 
     /**
-     * Master Autonomous Synchronization Entry Point.
-     * Coordinates national catalog completeness and real-time regional live feed polling.
+     * Synchronizes a single registered government source end-to-end:
+     * - Checks source eligibility.
+     * - Records sync attempt in the registry.
+     * - Invokes the modular connector with full SSRF and bounds protections.
+     * - Normalizes documents into official Lok-Setu policy records.
+     * - Deduplicates against existing Document records using URL and title.
+     * - Updates existing documents if content has changed (bumping version and preserving source URL).
+     * - Persists new documents with full statutory and demographic provenance.
+     * - Automatically triggers RAG chunking, embedding generation, and vector indexing.
+     * - Records sync success or failure in the registry.
+     *
+     * @param {Object} params
+     * @param {Object} params.sourceDef - Source definition
+     * @param {GovernmentSourceRegistry} [params.registry=governmentSourceRegistry]
+     * @param {Object} [params.connectorOptions={}] - Overrides for connector (fetchFn, dnsResolver, timeoutMs, maxSizeBytes, limit)
+     * @param {Object} [params.indexingOptions={}] - Overrides for indexing (embeddingGenerator, model, chunkingOptions)
+     * @returns {Promise<Object>}
      */
-    runFullAutonomousSync: async (options = {}) => {
-        const catalogStats = await governmentSyncService.syncNationalStateCatalog();
+    syncSingleRegisteredSource: async ({
+        sourceDef,
+        registry = governmentSourceRegistry,
+        connectorOptions = {},
+        indexingOptions = {},
+    } = {}) => {
+        if (!isSourceEligibleForSync(sourceDef)) {
+            return {
+                success: false,
+                sourceId: sourceDef?.id || "unknown",
+                isEligible: false,
+                reason: "Source is not eligible for automated sync (disabled, unverified, or incompatible connector)",
+                documentsFound: 0,
+                syncedCount: 0,
+                updatedCount: 0,
+                skippedCount: 0,
+                indexedCount: 0,
+                errors: [],
+                documents: [],
+            };
+        }
 
-        let pibStats = {
+        // 1. Record sync attempt in registry
+        if (registry && typeof registry.recordSyncAttempt === "function" && registry.hasSource(sourceDef.id)) {
+            registry.recordSyncAttempt(sourceDef.id);
+        }
+
+        // 2. Fetch and normalize documents via modular connector
+        const mergedOptions = {
+            ...connectorOptions,
+            fetcher: connectorOptions.fetcher || connectorOptions.fetchFn,
+        };
+        const connectorResult = await fetchAndNormalizeSource(sourceDef, mergedOptions);
+
+        if (!connectorResult.success && connectorResult.errors?.length > 0) {
+            if (registry && typeof registry.recordSyncFailure === "function" && registry.hasSource(sourceDef.id)) {
+                registry.recordSyncFailure(sourceDef.id, connectorResult.errors.join("; "));
+            }
+            return {
+                success: false,
+                sourceId: sourceDef.id,
+                isEligible: true,
+                documentsFound: 0,
+                syncedCount: 0,
+                updatedCount: 0,
+                skippedCount: 0,
+                indexedCount: 0,
+                errors: connectorResult.errors,
+                documents: [],
+            };
+        }
+
+        const stats = {
+            success: true,
+            sourceId: sourceDef.id,
+            isEligible: true,
+            documentsFound: connectorResult.documents.length,
+            syncedCount: 0,
+            updatedCount: 0,
+            skippedCount: 0,
+            indexedCount: 0,
+            errors: [...(connectorResult.errors || [])],
+            documents: [],
+        };
+
+        // 3. Process each normalized document
+        for (const doc of connectorResult.documents) {
+            try {
+                const docUrl = (doc.documentUrl || doc.officialSourceUrl || "").trim();
+                const docTitle = (doc.title || "").trim();
+                const rawContent = (doc.rawContent || doc.summary || docTitle).trim();
+                const newContentHash = computeContentHash(docTitle, rawContent);
+
+                const queryConditions = [];
+                if (docUrl) {
+                    queryConditions.push({ officialPortalUrl: docUrl });
+                    queryConditions.push({ officialSourceUrl: docUrl });
+                }
+                if (docTitle) {
+                    queryConditions.push({ title: docTitle });
+                }
+
+                let existing = null;
+                if (queryConditions.length > 0) {
+                    existing = await Document.findOne({ $or: queryConditions });
+                }
+
+                if (existing) {
+                    // Check if content has changed
+                    if (existing.contentHash === newContentHash) {
+                        stats.skippedCount++;
+                        continue;
+                    }
+
+                    // Content has changed - update existing document
+                    existing.title = docTitle || existing.title;
+                    existing.rawExtractedText = rawContent;
+                    existing.contentHash = newContentHash;
+                    existing.retrievedAt = new Date();
+                    if (doc.publicationDate) {
+                        existing.notificationDate = new Date(doc.publicationDate);
+                    }
+                    if (doc.isPdf) {
+                        existing.originalPdfUrl = doc.pdfUrl || doc.documentUrl;
+                    }
+                    if (doc.documentType) {
+                        existing.documentType = doc.documentType;
+                    }
+
+                    const currentVer = parseFloat(existing.sourceVersion) || 1.0;
+                    existing.sourceVersion = (currentVer + 0.1).toFixed(1);
+
+                    existing.metadataProvenance = {
+                        ...(existing.metadataProvenance?.toObject ? existing.metadataProvenance.toObject() : existing.metadataProvenance || {}),
+                        officialSource: {
+                            sourceId: sourceDef.id,
+                            sourceName: sourceDef.name,
+                            connectorType: sourceDef.connectorType,
+                            retrievedAt: new Date().toISOString(),
+                        },
+                    };
+
+                    await existing.save();
+                    stats.updatedCount++;
+                    stats.documents.push({ id: existing._id, title: existing.title, action: "updated" });
+
+                    // Re-index into Atlas / Vector search (idempotently clears stale chunks first)
+                    try {
+                        await indexingService.indexDocument(existing._id, indexingOptions);
+                        stats.indexedCount++;
+                    } catch (idxErr) {
+                        stats.errors.push(`Vector indexing failed for updated doc ${existing._id}: ${idxErr.message}`);
+                    }
+                } else {
+                    // New document record
+                    const stateName = STATE_CODE_TO_NAME_MAP[sourceDef.stateCode] || sourceDef.stateCode || "ALL";
+                    const applicableState = sourceDef.jurisdictionLevel === JURISDICTION_LEVELS.CENTRAL ? "ALL" : stateName;
+
+                    const newDoc = await Document.create({
+                        title: docTitle,
+                        documentType: doc.documentType || DOCUMENT_TYPES.GOVERNMENT_NOTIFICATION,
+                        jurisdictionLevel: sourceDef.jurisdictionLevel,
+                        applicableState,
+                        applicableDistrict: "ALL",
+                        issuingAuthority: sourceDef.department || sourceDef.name,
+                        officialPortalUrl: docUrl,
+                        officialSourceUrl: doc.officialSourceUrl || sourceDef.officialSourceUrl,
+                        originalPdfUrl: doc.isPdf ? doc.pdfUrl || doc.documentUrl : undefined,
+                        rawExtractedText: rawContent,
+                        notificationDate: doc.publicationDate ? new Date(doc.publicationDate) : new Date(),
+                        contentHash: newContentHash,
+                        ingestionStatus: "indexed",
+                        isActive: true,
+                        tags: Array.isArray(doc.tags) && doc.tags.length ? doc.tags : [
+                            "Government Policy",
+                            sourceDef.jurisdictionLevel,
+                            ...(sourceDef.tags || []),
+                        ],
+                        metadataProvenance: {
+                            officialSource: {
+                                sourceId: sourceDef.id,
+                                sourceName: sourceDef.name,
+                                connectorType: sourceDef.connectorType,
+                                retrievedAt: new Date().toISOString(),
+                            },
+                        },
+                    });
+
+                    stats.syncedCount++;
+                    stats.documents.push({ id: newDoc._id, title: newDoc.title, action: "created" });
+
+                    // Automatic Vector Indexing
+                    try {
+                        await indexingService.indexDocument(newDoc._id, indexingOptions);
+                        stats.indexedCount++;
+                    } catch (idxErr) {
+                        stats.errors.push(`Vector indexing failed for doc ${newDoc._id}: ${idxErr.message}`);
+                    }
+                }
+            } catch (docErr) {
+                stats.errors.push(`Document processing error for '${doc.title}': ${docErr.message}`);
+            }
+        }
+
+        // 4. Record sync success in registry
+        if (registry && typeof registry.recordSyncSuccess === "function" && registry.hasSource(sourceDef.id)) {
+            registry.recordSyncSuccess(sourceDef.id);
+        }
+
+        return stats;
+    },
+
+    /**
+     * Batch synchronizes registered government sources with per-source failure isolation.
+     *
+     * @param {Object} [options]
+     * @param {GovernmentSourceRegistry} [options.registry=governmentSourceRegistry]
+     * @param {string[]} [options.sourceIds]
+     * @param {string} [options.jurisdictionLevel]
+     * @param {string} [options.stateCode]
+     * @param {number} [options.limitPerSource]
+     * @param {Object} [options.connectorOptions]
+     * @param {Object} [options.indexingOptions]
+     * @returns {Promise<Object>}
+     */
+    syncRegisteredGovernmentSources: async ({
+        registry = governmentSourceRegistry,
+        sourceIds,
+        jurisdictionLevel,
+        stateCode,
+        limitPerSource,
+        connectorOptions = {},
+        indexingOptions = {},
+    } = {}) => {
+        const eligibleSources = getEligibleSourcesForSync({
+            registry,
+            sourceIds,
+            jurisdictionLevel,
+            stateCode,
+        });
+
+        const allSources = registry.getAllSources();
+        const overallStats = {
+            totalSourcesConsidered: allSources.length,
+            eligibleSourcesCount: eligibleSources.length,
+            ineligibleSourcesCount: allSources.length - eligibleSources.length,
             totalInspected: 0,
             syncedCount: 0,
+            updatedCount: 0,
             skippedCount: 0,
             indexedCount: 0,
             errors: [],
+            sourceResults: [],
         };
 
-        if (options.includeLivePib !== false) {
+        const mergedConnectorOptions = {
+            ...connectorOptions,
+            ...(limitPerSource ? { limit: limitPerSource } : {}),
+        };
+
+        for (const source of eligibleSources) {
             try {
-                pibStats = await governmentSyncService.syncRegionalPibFeeds({
+                const result = await governmentSyncService.syncSingleRegisteredSource({
+                    sourceDef: source,
+                    registry,
+                    connectorOptions: mergedConnectorOptions,
+                    indexingOptions,
+                });
+
+                overallStats.totalInspected += result.documentsFound || 0;
+                overallStats.syncedCount += result.syncedCount || 0;
+                overallStats.updatedCount += result.updatedCount || 0;
+                overallStats.skippedCount += result.skippedCount || 0;
+                overallStats.indexedCount += result.indexedCount || 0;
+
+                if (result.errors?.length > 0) {
+                    overallStats.errors.push(...result.errors);
+                }
+
+                overallStats.sourceResults.push(result);
+            } catch (sourceErr) {
+                const errMsg = `Source '${source.id}' fatal error: ${sourceErr.message}`;
+                overallStats.errors.push(errMsg);
+                if (registry && typeof registry.recordSyncFailure === "function" && registry.hasSource(source.id)) {
+                    registry.recordSyncFailure(source.id, sourceErr.message);
+                }
+            }
+        }
+
+        return overallStats;
+    },
+
+    /**
+     * Master Autonomous Synchronization Entry Point.
+     * Coordinates national catalog completeness and real-time registered source synchronization.
+     */
+    runFullAutonomousSync: async (options = {}) => {
+        let catalogStats = {
+            totalConsidered: 0,
+            syncedCount: 0,
+            skippedCount: 0,
+            indexedCount: 0,
+        };
+
+        if (options.includeBaselineCatalog !== false) {
+            catalogStats = await governmentSyncService.syncNationalStateCatalog();
+        }
+
+        let sourceStats = {
+            totalSourcesConsidered: 0,
+            eligibleSourcesCount: 0,
+            ineligibleSourcesCount: 0,
+            totalInspected: 0,
+            syncedCount: 0,
+            updatedCount: 0,
+            skippedCount: 0,
+            indexedCount: 0,
+            errors: [],
+            sourceResults: [],
+        };
+
+        if (options.includeRegisteredSources !== false) {
+            try {
+                sourceStats = await governmentSyncService.syncRegisteredGovernmentSources({
+                    registry: options.registry || governmentSourceRegistry,
+                    sourceIds: options.sourceIds,
+                    jurisdictionLevel: options.jurisdictionLevel,
+                    stateCode: options.stateCode,
+                    limitPerSource: options.limitPerBureau || options.limitPerSource || 2,
+                    connectorOptions: {
+                        fetchFn: options.fetchFn || globalThis.fetch,
+                        dnsResolver: options.dnsResolver,
+                        timeoutMs: options.timeoutMs,
+                    },
+                    indexingOptions: options.indexingOptions || {},
+                });
+            } catch (srcErr) {
+                sourceStats.errors.push(`Registered sources sync error: ${srcErr.message}`);
+            }
+        } else if (options.includeLivePib !== false) {
+            try {
+                sourceStats = await governmentSyncService.syncRegionalPibFeeds({
                     bureauCodes: options.bureauCodes || [48, 3, 30, 14, 22],
                     limitPerBureau: options.limitPerBureau || 2,
                     fetchFn: options.fetchFn || globalThis.fetch,
                 });
             } catch (pibErr) {
-                pibStats.errors.push(pibErr.message);
+                sourceStats.errors.push(pibErr.message);
             }
         }
 
         return {
             timestamp: new Date().toISOString(),
             catalog: catalogStats,
-            livePib: pibStats,
-            totalNewDocumentsSynced: catalogStats.syncedCount + pibStats.syncedCount,
-            totalIndexedChunks: catalogStats.indexedCount + pibStats.indexedCount,
+            registeredSources: sourceStats,
+            livePib: sourceStats,
+            totalNewDocumentsSynced: (catalogStats.syncedCount || 0) + (sourceStats.syncedCount || 0),
+            totalDocumentsUpdated: sourceStats.updatedCount || 0,
+            totalIndexedChunks: (catalogStats.indexedCount || 0) + (sourceStats.indexedCount || 0),
         };
     },
 };

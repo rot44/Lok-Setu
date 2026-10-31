@@ -33,12 +33,14 @@ export const runGovSyncCycle = async () => {
 
         console.log(`✅ [GovSync Worker] Cycle Completed Successfully:`);
         console.log(`   - National Baseline Schemas Synced: ${result.catalog.syncedCount} (Skipped: ${result.catalog.skippedCount})`);
-        console.log(`   - Regional PIB Releases Synced: ${result.livePib.syncedCount} (Inspected: ${result.livePib.totalInspected})`);
+        console.log(`   - Registered Sources Synced: ${result.registeredSources?.syncedCount ?? result.livePib?.syncedCount ?? 0} (Inspected: ${result.registeredSources?.totalInspected ?? result.livePib?.totalInspected ?? 0})`);
         console.log(`   - Total New Documents Added: ${result.totalNewDocumentsSynced}`);
+        console.log(`   - Total Documents Updated: ${result.totalDocumentsUpdated || 0}`);
         console.log(`   - Total Indexed into Atlas Vector Search: ${result.totalIndexedChunks}`);
 
-        if (result.livePib.errors?.length > 0) {
-            console.warn(`   - Warnings/Errors:`, result.livePib.errors);
+        const syncErrors = result.registeredSources?.errors || result.livePib?.errors || [];
+        if (syncErrors.length > 0) {
+            console.warn(`   - Warnings/Errors:`, syncErrors);
         }
         return result;
     } catch (err) {

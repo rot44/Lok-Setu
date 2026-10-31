@@ -68,6 +68,54 @@ export const VALID_INDIAN_STATE_CODES = Object.freeze(
 );
 
 /**
+ * Mapping of canonical 2-letter Indian State and UT codes to their formal full names.
+ */
+export const STATE_CODE_TO_NAME_MAP = Object.freeze({
+    AP: "Andhra Pradesh",
+    AR: "Arunachal Pradesh",
+    AS: "Assam",
+    BR: "Bihar",
+    CG: "Chhattisgarh",
+    CT: "Chhattisgarh",
+    GA: "Goa",
+    GJ: "Gujarat",
+    HR: "Haryana",
+    HP: "Himachal Pradesh",
+    JH: "Jharkhand",
+    KA: "Karnataka",
+    KL: "Kerala",
+    MP: "Madhya Pradesh",
+    MH: "Maharashtra",
+    MN: "Manipur",
+    ML: "Meghalaya",
+    MZ: "Mizoram",
+    NL: "Nagaland",
+    OD: "Odisha",
+    OR: "Odisha",
+    PB: "Punjab",
+    RJ: "Rajasthan",
+    SK: "Sikkim",
+    TN: "Tamil Nadu",
+    TG: "Telangana",
+    TS: "Telangana",
+    TR: "Tripura",
+    UP: "Uttar Pradesh",
+    UK: "Uttarakhand",
+    UT: "Uttarakhand",
+    WB: "West Bengal",
+    AN: "Andaman and Nicobar Islands",
+    CH: "Chandigarh",
+    DN: "Dadra and Nagar Haveli and Daman and Diu",
+    DH: "Dadra and Nagar Haveli and Daman and Diu",
+    DL: "Delhi",
+    JK: "Jammu and Kashmir",
+    LA: "Ladakh",
+    LD: "Lakshadweep",
+    PY: "Puducherry",
+    ALL: "ALL",
+});
+
+/**
  * Custom error class for government source registry validation failures.
  */
 export class SourceValidationError extends Error {

@@ -130,19 +130,35 @@ export const triggerPibSync = asyncHandler(async (req, res) => {
  * @access  Private (Admin / Official)
  */
 export const triggerAutonomousGovSync = asyncHandler(async (req, res) => {
-    const { includeLivePib = true, bureauCodes, limitPerBureau = 2 } = req.body;
+    const {
+        includeLivePib = true,
+        includeRegisteredSources = true,
+        includeBaselineCatalog = true,
+        bureauCodes,
+        sourceIds,
+        jurisdictionLevel,
+        stateCode,
+        limitPerBureau = 2,
+    } = req.body;
 
     const stats = await governmentSyncService.runFullAutonomousSync({
         includeLivePib,
+        includeRegisteredSources,
+        includeBaselineCatalog,
         bureauCodes,
+        sourceIds,
+        jurisdictionLevel,
+        stateCode,
         limitPerBureau: parseInt(limitPerBureau, 10) || 2,
     });
+
+    const updatedMsg = stats.totalDocumentsUpdated ? `, updated ${stats.totalDocumentsUpdated} policies` : "";
 
     return res.status(200).json(
         new APIResponse(
             200,
             stats,
-            `Autonomous sync complete. Synced ${stats.totalNewDocumentsSynced} new policies across central and state tiers.`
+            `Autonomous sync complete. Synced ${stats.totalNewDocumentsSynced} new policies${updatedMsg} across central and state tiers.`
         )
     );
 });
