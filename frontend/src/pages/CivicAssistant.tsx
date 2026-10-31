@@ -28,7 +28,8 @@ import {
   clearStoredSession,
 } from "@/services/assistant.service";
 import { buildSchemeExplanationPrompt } from "@/utils/aiPrompt";
-import { useSpeechRecognition, BCP47_SPEECH_MAP } from "@/hooks/useSpeechRecognition";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { BCP47_SPEECH_MAP } from "@/types/voice";
 import { cn } from "@/utils/cn";
 
 const SUGGESTED_QUERIES = [

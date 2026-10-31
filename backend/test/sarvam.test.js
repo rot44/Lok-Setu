@@ -388,4 +388,50 @@ test("Lok-Setu Sarvam Multilingual & Voice Synthesis Suite", async (t) => {
             UserAnalyzedDocument.findOne = origFindOne;
         }
     });
+
+    // ─── 5. Speech-to-Text Transcription via Saaras v4 ───────────────────────
+    await t.test("12. Sarvam transcribeSpeech sends audio and returns Saaras transcription", async () => {
+        // 1. Throws on missing audio
+        const testService = new SarvamService({
+            apiKey: "test_key",
+            fetchFn: async () => {},
+        });
+
+        await assert.rejects(
+            async () => await testService.transcribeSpeech(null, "hi"),
+            (err) => err.statusCode === 400
+        );
+
+        // 2. Transcribes valid audio buffer
+        let capturedUrl = null;
+        let capturedHeaders = null;
+        let capturedBody = null;
+
+        const mockService = new SarvamService({
+            apiKey: "test_key_stt",
+            fetchFn: async (url, options) => {
+                capturedUrl = url;
+                capturedHeaders = options.headers;
+                capturedBody = options.body;
+                return {
+                    ok: true,
+                    json: async () => ({
+                        transcript: "प्रधानमंत्री किसान सम्मान निधि योजना",
+                        language_code: "hi-IN",
+                        request_id: "req_stt_12345",
+                    }),
+                };
+            },
+        });
+
+        const dummyAudio = Buffer.from("dummy-audio-bytes");
+        const res = await mockService.transcribeSpeech(dummyAudio, "hi", "voice.webm", "audio/webm");
+
+        assert.equal(capturedUrl, "https://api.sarvam.ai/speech-to-text");
+        assert.equal(capturedHeaders["api-subscription-key"], "test_key_stt");
+        assert.ok(capturedBody instanceof FormData);
+        assert.equal(res.transcript, "प्रधानमंत्री किसान सम्मान निधि योजना");
+        assert.equal(res.languageCode, "hi-IN");
+        assert.equal(res.requestId, "req_stt_12345");
+    });
 });
