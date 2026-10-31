@@ -12,6 +12,8 @@ import {
     EXACT_MISSING_INFO_SENTENCE,
     CIVIC_DISCLAIMER,
     CIVIC_ANALYSIS_SYSTEM_INSTRUCTION,
+    isConversationalOrGeneralQuery,
+    CIVIC_STEERING_SYSTEM_INSTRUCTION,
 } from "../src/services/civicAnalysis.service.js";
 import { ApiError } from "../src/utils/apiError.js";
 
@@ -93,6 +95,21 @@ test("Lok-Setu Grounded Multilingual Civic Analysis Suite", async (t) => {
             () => validateLanguage("es"),
             (err) => err instanceof ApiError && err.statusCode === 400
         );
+    });
+
+    await t.test("isConversationalOrGeneralQuery identifies greetings, pleasantries, and open-ended conversation", () => {
+        assert.equal(isConversationalOrGeneralQuery("hi"), true);
+        assert.equal(isConversationalOrGeneralQuery("hello"), true);
+        assert.equal(isConversationalOrGeneralQuery("how are you"), true);
+        assert.equal(isConversationalOrGeneralQuery("how are you?"), true);
+        assert.equal(isConversationalOrGeneralQuery("namaste"), true);
+        assert.equal(isConversationalOrGeneralQuery("नमस्ते"), true);
+        assert.equal(isConversationalOrGeneralQuery("who are you"), true);
+        assert.equal(isConversationalOrGeneralQuery("what can you do?"), true);
+        assert.equal(isConversationalOrGeneralQuery("help me"), true);
+        assert.equal(isConversationalOrGeneralQuery("kya haal hai"), true);
+        assert.equal(isConversationalOrGeneralQuery("What is the interest subsidy under PM SVANidhi?"), false);
+        assert.equal(isConversationalOrGeneralQuery("Who is eligible for PM-KISAN direct income support?"), false);
     });
 
     // ─── 2. Evidence Formatting & Delimitation (Prompt Injection Defense) ─────

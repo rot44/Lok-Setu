@@ -85,6 +85,143 @@ export const validateQuery = (query) => {
 };
 
 /**
+ * Detects whether a citizen query is a conversational greeting, pleasantry,
+ * or general unaligned inquiry rather than a specific policy lookup.
+ *
+ * @param {string} query
+ * @returns {boolean}
+ */
+export const isConversationalOrGeneralQuery = (query = "") => {
+    if (!query || typeof query !== "string") return false;
+    const clean = query.trim().toLowerCase().replace(/[?!.,;:()'"]/g, "").replace(/\s+/g, " ");
+    if (!clean) return false;
+
+    // Direct greetings and pleasantries
+    const greetingWords = new Set([
+        "hi", "hello", "hey", "namaste", "namaskar", "pranam", "pranaam",
+        "salaam", "salam", "ram ram", "kem cho", "vanakkam", "vandanalu",
+        "nomoshkar", "sasrikal", "good morning", "good afternoon", "good evening",
+        "help", "help me", "start", "bye", "goodbye", "thanks", "thank you",
+        "shukriya", "dhanyawad",
+    ]);
+
+    if (greetingWords.has(clean)) return true;
+
+    // Common Indic scripts for greetings
+    if (/^(नमस्ते|नमस्कार|प्रणाम|जय श्री राम|राम राम|केम छो|வணக்கம்|నమస్కారం|নমস্কার)$/u.test(clean)) {
+        return true;
+    }
+
+    // Check if query is a conversational greeting/pleasantry pattern
+    const conversationalPatterns = [
+        /^how are you\b/i,
+        /^how do you do\b/i,
+        /^who are you\b/i,
+        /^what are you\b/i,
+        /^what is your name\b/i,
+        /^who made you\b/i,
+        /^what can you do\b/i,
+        /^how can you help\b/i,
+        /^what do you do\b/i,
+        /^tell me about yourself\b/i,
+        /^kya haal hai\b/i,
+        /^aap kaise ho\b/i,
+        /^tum kaise ho\b/i,
+        /^sab theek\b/i,
+        /^aap kaun ho\b/i,
+        /^tum kaun ho\b/i,
+        /^kya kar sakte ho\b/i,
+        /^madad chahiye\b/i,
+        /^mujhe madad chahiye\b/i,
+    ];
+
+    for (const pattern of conversationalPatterns) {
+        if (pattern.test(clean)) return true;
+    }
+
+    // Specific scheme / policy / legal / notice inquiries must NOT be treated as conversational
+    if (/\b(scheme|yojana|subsidy|loan|pm-kisan|pmsvanidhi|svanidhi|ayushman|ration|card|notice|circular|challan|order|eligib|guideline|portal|pension|tax|court|appeal|statute|rule|document|file)\b/i.test(clean)) {
+        return false;
+    }
+
+    return false;
+};
+
+/**
+ * System instruction dedicated to warm conversational engagement and proactive civic mission steering.
+ */
+export const CIVIC_STEERING_SYSTEM_INSTRUCTION = `
+You are the Civic Assistant of Lok-Setu (नागरिक-सेतु), an accessible, empowering civic intelligence platform connecting Indian citizens, farmers, street vendors, women entrepreneurs, artisans, and families with verified welfare rights and plain-language notice explanations.
+
+MISSION STEERING & CONVERSATIONAL OBJECTIVES:
+1. Warmth & Dignity: Answer the citizen's greeting, pleasantry, or casual inquiry with genuine warmth, courtesy, and respect in their requested language.
+2. Introduce Lok-Setu: Politely explain that you are their Lok-Setu Civic Guide, dedicated to helping them access welfare benefits, check eligibility, and understand government notices and circulars.
+3. Proactive Mission Steering: Ask 1-2 focused, conversational follow-up questions to understand their needs (e.g., asking if they would like to explore welfare programs in agriculture, health coverage, student assistance, street vendor loans, or if they have an official notice or order they need explained).
+4. Do NOT output missing document warnings, legal disclaimer boxes, or claim lack of evidence. Respond directly and naturally.
+`;
+
+/**
+ * Builds prompt for conversational civic steering.
+ */
+export const buildCivicSteeringPrompt = ({ query, language = "en", conversationHistory = [] }) => {
+    const langName = LANGUAGE_NAMES[language] || "English";
+    const historyBlock = formatConversationContext(conversationHistory);
+
+    return `TARGET LANGUAGE: ${langName} (${language})
+
+CITIZEN MESSAGE: "${query}"
+${historyBlock}
+INSTRUCTIONS:
+Respond warmly and helpfully in ${langName}. Acknowledge the citizen, briefly introduce Lok-Setu's purpose, and ask what government scheme, benefit, or notice they would like help with today.`;
+};
+
+/**
+ * Localized instant fallback responses across all 8 supported Indian languages.
+ */
+export const LOCALIZED_STEERING_FALLBACKS = {
+    en: {
+        answer: "Hello! I am your Lok-Setu Civic Assistant. I am doing well, thank you! I am here to help you navigate Indian government welfare schemes, check your eligibility, and understand official notices or circulars in simple language. Are you looking for welfare support in healthcare (Ayushman Bharat), agriculture (PM-KISAN), street vendor credit (PM SVANidhi), or do you have an official notice you would like me to explain?",
+        interpretation: "Lok-Setu provides verified civic guidance on welfare schemes, subsidies, and government notices.",
+        summary: "Warm welcome and guidance to explore welfare schemes, subsidies, and notice analysis.",
+    },
+    hi: {
+        answer: "नमस्ते! मैं आपका लोक-सेतु सिविक सहायक हूँ। मैं बहुत अच्छा हूँ, पूछने के लिए धन्यवाद! मेरा उद्देश्य आपको सरकारी कल्याणकारी योजनाओं, आपकी पात्रता, और आधिकारिक नोटिसों को सरल भाषा में समझाने में मदद करना है। क्या आप स्वास्थ्य (आयुष्मान भारत), किसान सहायता (पीएम-किसान), स्वनिधि ऋण, या किसी सरकारी नोटिस/आदेश के बारे में जानकारी चाहते हैं?",
+        interpretation: "लोक-सेतु आपको सरकारी योजनाओं और कानूनी व प्रशासनिक नोटिसों की सटीक जानकारी देता है।",
+        summary: "नागरिक का अभिवादन और कल्याणकारी योजनाओं की खोज के लिए मार्गदर्शन।",
+    },
+    gu: {
+        answer: "નમસ્તે! હું તમારો લોક-સેતુ નાગરિક સહાયક છું. હું મજામાં છું, આભાર! હું તમને સરકારી કલ્યાણકારી યોજનાઓ, તમારી પાત્રતા અને સત્તાવાર નોટિસો સરળ ભાષામાં સમજવામાં મદદ કરવા માટે અહીં છું. શું તમે આયુષ્માન ભારત, પીએમ-કિસાન, પીએમ સ્વનિધિ અથવા કોઈ સરકારી પરિપત્ર વિશે માહિતી મેળવવા માંગો છો?",
+        interpretation: "લોક-સેતુ સરકારી યોજનાઓ અને નોટિસો વિશે પ્રમાણિત માર્ગદર્શન આપે છે.",
+        summary: "નાગરિકનું સ્વાગત અને કલ્યાણકારી યોજનાઓ શોધવા માટે માર્ગદર્શન.",
+    },
+    mr: {
+        answer: "नमस्कार! मी तुमचा लोक-सेतू सिव्हिक सहाय्यक आहे. मी ठीक आहे, विचारल्याबद्दल धन्यवाद! सरकारी कल्याणकारी योजना, तुमची पात्रता आणि अधिकृत नोटिसा सोप्या भाषेत समजावून सांगणे हे माझे काम आहे. तुम्हाला आयुष्मान भारत, पीएम-किसान, पीएम स्वनिधी किंवा कोणत्याही अधिकृत परिपत्रकाबद्दल माहिती हवी आहे का?",
+        interpretation: "लोक-सेतू नागरिकांना सरकारी योजना आणि अधिकृत नोटिसांचे योग्य मार्गदर्शन करतो.",
+        summary: "नागरिकाचे स्वागत आणि कल्याणकारी योजनांबद्दल माहितीसाठी मार्गदर्शन.",
+    },
+    bn: {
+        answer: "নমস্কার! আমি আপনার লোক-সেতু নাগরিক সহায়ক। আমি ভালো আছি, ধন্যবাদ! আমি আপনাকে সরকারি কল্যাণমূলক প্রকল্প, যোগ্যতা এবং সরকারি নোটিশ সহজ ভাষায় বুঝতে সাহায্য করতে প্রস্তুত। আপনি কি আয়ুষ্মান ভারত, পিএম-কিসান, স্বনিধি বা কোনো সরকারি আদেশ সম্পর্কে জানতে চান?",
+        interpretation: "লোক-সেতু সরকারি প্রকল্প এবং নোটিশের সহজ ও সঠিক ব্যাখ্যা প্রদান করে।",
+        summary: "নাগরিককে স্বাগত এবং বিভিন্ন কল্যাণ প্রকল্প অনুসন্ধানের নির্দেশিকা।",
+    },
+    ta: {
+        answer: "வணக்கம்! நான் உங்கள் லோக்-சேது குடிமக்கள் உதவியாளர். நான் நலம், நன்றி! அரசு நலத்திட்டங்கள், தகுதி மற்றும் அதிகாரப்பூர்வ அறிவிப்புகளை எளிய மொழியில் புரிந்துகொள்ள உங்களுக்கு உதவ நான் இங்கு உள்ளேன். ஆயுஷ்மான் பாரத், பிஎம்-கிசான் அல்லது அரசு அறிவிப்புகள் குறித்து ஏதேனும் தகவல் வேண்டுமா?",
+        interpretation: "லோக்-சேது அரசு திட்டங்கள் மற்றும் சுற்றறிக்கைகள் பற்றிய தகவல்களை வழங்குகிறது.",
+        summary: "குடிமக்களை வரவேற்று நலத்திட்டங்களை அறிய வழிகாட்டல்.",
+    },
+    te: {
+        answer: "నమస్కారం! నేను మీ లోక్-సేతు పౌర సహాయకుడిని. నేను బాగున్నాను, ధన్యవాదాలు! ప్రభుత్వ సంక్షేమ పథకాలు, మీ అర్హత మరియు అధికారిక నోటీసులను సరళమైన భాషలో అర్థం చేసుకోవడానికి నేను సహాయం చేస్తాను. మీరు ఆయుష్మాన్ భారత్, పీఎం-కిసాన్, లేదా ఏదైనా ప్రభుత్వ నోటీసు గురించి తెలుసుకోవాలనుకుంటున్నారా?",
+        interpretation: "లోక్-సేతు ప్రభుత్వ పథకాలు మరియు నోటీసులపై స్పష్టమైన మార్గదర్శకత్వాన్ని అందిస్తుంది.",
+        summary: "పౌరులకు స్వాగతం మరియు సంక్షేమ పథకాల అన్వేషణకు మార్గదర్శకం.",
+    },
+    kn: {
+        answer: "ನಮಸ್ಕಾರ! ನಾನು ನಿಮ್ಮ ಲೋಕ್-ಸೇತು ನಾಗರಿಕ ಸಹಾಯಕ. ನಾನು ಚೆನ್ನಾಗಿದ್ದೇನೆ, ಧನ್ಯವಾದಗಳು! ಸರ್ಕಾರಿ ಕಲ್ಯಾಣ ಯೋಜನೆಗಳು, ಅರ್ಹತೆ ಮತ್ತು ಅಧಿಕೃತ ನೋಟಿಸ್‌ಗಳನ್ನು ಸರಳ ಭಾಷೆಯಲ್ಲಿ ಅರ್ಥಮಾಡಿಕೊಳ್ಳಲು ನಾನು ನಿಮಗೆ ಸಹಾಯ ಮಾಡುತ್ತೇನೆ. ನೀವು ಆಯುಷ್ಮಾನ್ ಭಾರತ್, ಪಿಎಂ-ಕಿಸಾನ್, ಅಥವಾ ಯಾವುದಾದರೂ ಸರ್ಕಾರಿ ಆದೇಶದ ಬಗ್ಗೆ ಮಾಹಿತಿ ಬಯಸುವಿರಾ?",
+        interpretation: "ಲೋಕ್-ಸೇತು ಸರ್ಕಾರಿ ಯೋಜನೆಗಳು ಮತ್ತು ನೋಟಿಸ್‌ಗಳ ಬಗ್ಗೆ ಸ್ಪಷ್ಟ ಮಾರ್ಗದರ್ಶನ ನೀಡುತ್ತದೆ.",
+        summary: "ನಾಗರಿಕರಿಗೆ ಸ್ವಾಗತ ಮತ್ತು ಕಲ್ಯಾಣ ಯೋಜನೆಗಳ ಅನ್ವೇಷಣೆಗೆ ಮಾರ್ಗದರ್ಶನ.",
+    },
+};
+
+/**
  * Formats retrieved evidence chunks into an XML-delimited block resistant to prompt injection.
  * Clearly separates passive source data from active instructions.
  *
