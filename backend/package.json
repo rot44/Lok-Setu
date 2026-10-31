@@ -11,7 +11,9 @@
     "start": "node src/index.js",
     "worker": "nodemon src/workers/email.worker.js",
     "seed:schemes": "node src/scripts/seedRealSchemes.js",
-    "test": "node --test test/sarvam.test.js && node --test test/eligibility.test.js && node --test test/notice-analysis.test.js && node --test test/assistant.test.js && node --test test/civic-analysis.test.js && node --test test/ingestion.test.js && node --test test/rag-retrieval.test.js && node --test test/rag-indexing.test.js && node test/config.test.js"
+    "seed:multitier": "node src/scripts/seedStateAndMunicipalPolicies.js",
+    "sync:pib": "node src/scripts/syncPibNotifications.js",
+    "test": "node --test test/sarvam.test.js && node --test test/eligibility.test.js && node --test test/notice-analysis.test.js && node --test test/assistant.test.js && node --test test/civic-analysis.test.js && node --test test/ingestion.test.js && node --test test/rag-retrieval.test.js && node --test test/rag-indexing.test.js && node --test test/pib-watcher.test.js && node test/config.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.600.0",

@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
     ingestOfficialDocument,
     getDocumentStatus,
+    triggerPibSync,
 } from "../controllers/document.controller.js";
 import { verifyJWT, verifyRole } from "../middlewares/auth.middleware.js";
 import { USER_ROLES } from "../constants.js";
@@ -16,6 +17,13 @@ router.post(
     "/ingest",
     verifyRole(USER_ROLES.ADMIN, USER_ROLES.OFFICIAL),
     ingestOfficialDocument
+);
+
+// Trigger live sync of PIB notifications: restricted to admin and official roles
+router.post(
+    "/sync-pib",
+    verifyRole(USER_ROLES.ADMIN, USER_ROLES.OFFICIAL),
+    triggerPibSync
 );
 
 // Get ingestion & indexing status for a document

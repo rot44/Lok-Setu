@@ -1,5 +1,6 @@
 import { Document } from "../models/document.model.js";
 import { ingestionService } from "../services/ingestion.service.js";
+import { syncLatestPibReleases } from "../services/pibWatcher.service.js";
 import { ApiError } from "../utils/apiError.js";
 import { APIResponse } from "../utils/apiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -100,6 +101,24 @@ export const getDocumentStatus = asyncHandler(async (req, res) => {
                 indexingError: doc.indexingError,
             },
             "Document status retrieved successfully."
+        )
+    );
+});
+
+/**
+ * @desc    Trigger live sync of official government updates from Press Information Bureau (PIB)
+ * @route   POST /api/v1/documents/sync-pib
+ * @access  Private (Admin / Official)
+ */
+export const triggerPibSync = asyncHandler(async (req, res) => {
+    const limit = parseInt(req.body.limit, 10) || 5;
+    const result = await syncLatestPibReleases({ limit });
+
+    return res.status(200).json(
+        new APIResponse(
+            200,
+            result,
+            `Processed ${result.totalInspected} PIB releases. ${result.syncedCount} new documents ingested.`
         )
     );
 });
