@@ -3,13 +3,13 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Menu,
   X,
+  Scale,
   User,
   LayoutDashboard,
   LogOut,
   ChevronDown,
   ShieldCheck,
 } from "lucide-react";
-import { LokSetuLogo } from "@/components/brand/LokSetuLogo";
 import { useLanguage } from "@/context/LanguageContext";
 import { useAuth } from "@/context/AuthContext";
 import { LanguageSwitcher } from "./LanguageSwitcher";
@@ -79,19 +79,16 @@ export const Header: React.FC = () => {
             className="flex items-center gap-2.5 shrink-0 focus:outline-none select-none py-1 group"
             aria-label="Lok-Setu Home"
           >
-            <LokSetuLogo size="md" className="group-hover:scale-105 transition-transform duration-200" />
-            <div className="flex flex-col">
-              <div className="flex items-baseline gap-1.5 whitespace-nowrap">
-                <span className="font-serif text-[17px] font-bold tracking-tight text-stone-900 leading-none">
-                  लोक सेतु
-                </span>
-                <span className="text-stone-300 font-light text-sm">/</span>
-                <span className="font-sans text-[13.5px] font-semibold tracking-tight text-stone-700 leading-none">
-                  Lok-Setu
-                </span>
-              </div>
-              <span className="text-[9px] font-medium tracking-wider text-stone-400 uppercase mt-0.5 leading-none">
-                Civic Rights Bridge
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-stone-900 text-white shadow-xs group-hover:bg-stone-800 transition-colors">
+              <Scale className="h-4 w-4 text-mustard" />
+            </div>
+            <div className="flex items-baseline gap-1.5 whitespace-nowrap">
+              <span className="font-serif text-lg font-bold tracking-tight text-stone-900">
+                लोक सेतु
+              </span>
+              <span className="text-stone-300 font-light text-base">/</span>
+              <span className="font-sans text-sm font-semibold tracking-tight text-stone-700">
+                Lok-Setu
               </span>
             </div>
           </Link>
