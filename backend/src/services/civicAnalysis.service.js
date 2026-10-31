@@ -324,7 +324,8 @@ CRITICAL SECURITY & PROMPT INJECTION DEFENSE:
 CITIZEN-CENTRIC EXPLANATION STANDARD:
 Deliver a comprehensive, authoritative, and deeply practical explanation tailored from the citizen's standpoint:
 - If the citizen's query includes their personal background (e.g. state, age, gender, occupation, income, caste category, disability, ration card), directly address and evaluate their specific eligibility fit.
-- Format the 'answer' field with clear markdown headings and bullet points covering:
+- Format headings with clean bold text (e.g. **Personalized Eligibility Fit & Assessment**) and readable bullet points. NEVER use raw hashtag symbols ('#', '##', '###') for headings.
+- Structure the explanation across these key areas:
   1. **Personalized Eligibility Fit & Assessment**: Why the citizen or targeted demographic qualifies, explicitly checking age, state/residence, occupation, income, and category criteria.
   2. **Direct Financial & Statutory Entitlements**: Clear breakdown of monetary grants, DBT installments, loan subsidy / interest subvention, collateral-free credit limits, hospital cover caps, or livelihood kits.
   3. **Required Documents Checklist**: Plain bullet list of necessary proofs (Aadhaar, Bank Passbook seeded with DBT, Ration Card, Income/Caste Certificate, Land Record 7/12 extract, etc.).
@@ -682,6 +683,8 @@ export const analyzeCivicQuery = async (query, options = {}) => {
 
     const isInsufficient = Boolean(rawAiResult.insufficientEvidence);
     let answer = typeof rawAiResult.answer === "string" ? rawAiResult.answer.trim() : "";
+    // Clean raw markdown heading hashtags so answers never output literal '#' symbols
+    answer = answer.replace(/^#{1,6}\s*(.+)$/gm, "**$1**").trim();
     let interpretation = typeof rawAiResult.interpretation === "string" ? rawAiResult.interpretation.trim() : "";
     const summary = typeof rawAiResult.summary === "string" ? rawAiResult.summary.trim() : "";
     const sourceFacts = Array.isArray(rawAiResult.sourceFacts)

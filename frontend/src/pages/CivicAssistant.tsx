@@ -70,6 +70,80 @@ const NOTICE_SUGGESTED_QUERIES = [
   },
 ];
 
+const renderInlineMarkdown = (text: string): React.ReactNode => {
+  if (!text) return null;
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return (
+        <strong key={index} className="font-semibold text-neel">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return part;
+  });
+};
+
+export const RenderFormattedCivicText: React.FC<{ text: string }> = ({ text }) => {
+  if (!text) return null;
+
+  const lines = text.split("\n");
+
+  return (
+    <div className="space-y-2 font-sans text-sm leading-relaxed text-neel">
+      {lines.map((rawLine, idx) => {
+        const trimmed = rawLine.trim();
+        if (!trimmed) {
+          return <div key={idx} className="h-1.5" />;
+        }
+
+        // 1. Heading line (starts with #, ##, ###)
+        if (/^#{1,6}\s+/.test(trimmed)) {
+          const heading = trimmed.replace(/^#{1,6}\s+/, "");
+          return (
+            <h4
+              key={idx}
+              className="font-serif font-bold text-base text-neel tracking-tight pt-2 pb-0.5 first:pt-0"
+            >
+              {renderInlineMarkdown(heading)}
+            </h4>
+          );
+        }
+
+        // 2. Sub-bullet (indented with 2+ spaces or tabs before bullet)
+        if (/^\s{2,}[-*•]\s+/.test(rawLine) || /^(\t+)[-*•]\s+/.test(rawLine)) {
+          const content = rawLine.replace(/^\s*[-*•]\s+/, "");
+          return (
+            <div key={idx} className="ml-5 flex items-start gap-2 text-neel-muted leading-relaxed">
+              <span className="text-vermilion/70 shrink-0 font-bold text-xs mt-0.5">•</span>
+              <span className="text-neel">{renderInlineMarkdown(content)}</span>
+            </div>
+          );
+        }
+
+        // 3. Top-level bullet
+        if (/^[-*•]\s+/.test(trimmed)) {
+          const content = trimmed.replace(/^[-*•]\s+/, "");
+          return (
+            <div key={idx} className="flex items-start gap-2.5 text-neel leading-relaxed pt-0.5">
+              <span className="text-vermilion shrink-0 font-bold text-sm leading-none mt-1">•</span>
+              <span>{renderInlineMarkdown(content)}</span>
+            </div>
+          );
+        }
+
+        // 4. Regular paragraph
+        return (
+          <p key={idx} className="leading-relaxed">
+            {renderInlineMarkdown(trimmed)}
+          </p>
+        );
+      })}
+    </div>
+  );
+};
+
 export const CivicAssistant: React.FC = () => {
   const { language, t } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -479,10 +553,8 @@ export const CivicAssistant: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  {/* Assistant Answer / Summary */}
-                  <div className="text-sm font-sans leading-relaxed text-neel whitespace-pre-wrap">
-                    {m.text}
-                  </div>
+                  {/* Assistant Answer / Summary with rich formatting */}
+                  <RenderFormattedCivicText text={m.text} />
 
                   {/* Grounded Breakdown Details (when available) */}
                   {m.analysis && (
