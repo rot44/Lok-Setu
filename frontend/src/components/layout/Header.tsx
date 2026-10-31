@@ -131,22 +131,7 @@ export const Header: React.FC = () => {
             <div className="h-4 w-[1px] bg-stone-200 mx-0.5" />
 
             {isAuthenticated ? (
-              <div className="flex items-center gap-1.5">
-                {/* Desk Link */}
-                <Link
-                  to="/dashboard"
-                  className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors",
-                    location.pathname === "/dashboard"
-                      ? "text-stone-900 bg-stone-100 font-semibold"
-                      : "text-stone-600 hover:text-stone-900 hover:bg-stone-100/70"
-                  )}
-                  title={t("nav.dashboard", "Citizen Desk")}
-                >
-                  <LayoutDashboard className="h-3.5 w-3.5 text-stone-400" />
-                  <span className="whitespace-nowrap">{t("nav.dashboard", "Citizen Desk")}</span>
-                </Link>
-
+              <div className="flex items-center">
                 {/* User Dropdown */}
                 <div ref={userMenuRef} className="relative inline-block text-left">
                   <button
