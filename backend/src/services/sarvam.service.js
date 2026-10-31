@@ -301,17 +301,17 @@ export class SarvamService {
         }
 
         const targetBcp47 = toSarvamBcp47(targetLang);
-        let sourceBcp47 = "auto";
+        let sourceBcp47 = "en-IN";
         if (sourceLang && sourceLang !== "auto") {
             try {
                 sourceBcp47 = toSarvamBcp47(sourceLang);
             } catch {
-                sourceBcp47 = "auto";
+                sourceBcp47 = "en-IN";
             }
         }
 
         // If source matches target, return original text directly without API cost
-        if (sourceBcp47 !== "auto" && sourceBcp47 === targetBcp47) {
+        if (sourceBcp47 === targetBcp47) {
             return {
                 translatedText: text.trim(),
                 sourceLanguage: sourceBcp47,
