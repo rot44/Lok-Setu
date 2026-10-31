@@ -100,6 +100,9 @@ test("Lok-Setu Grounded Multilingual Civic Analysis Suite", async (t) => {
     await t.test("isConversationalOrGeneralQuery identifies greetings, pleasantries, and open-ended conversation", () => {
         assert.equal(isConversationalOrGeneralQuery("hi"), true);
         assert.equal(isConversationalOrGeneralQuery("hello"), true);
+        assert.equal(isConversationalOrGeneralQuery("heyy"), true);
+        assert.equal(isConversationalOrGeneralQuery("heyyy"), true);
+        assert.equal(isConversationalOrGeneralQuery("hii"), true);
         assert.equal(isConversationalOrGeneralQuery("how are you"), true);
         assert.equal(isConversationalOrGeneralQuery("how are you?"), true);
         assert.equal(isConversationalOrGeneralQuery("namaste"), true);

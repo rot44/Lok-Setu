@@ -96,26 +96,46 @@ export const isConversationalOrGeneralQuery = (query = "") => {
     const clean = query.trim().toLowerCase().replace(/[?!.,;:()'"]/g, "").replace(/\s+/g, " ");
     if (!clean) return false;
 
-    // Direct greetings and pleasantries
+    // 1. Specific scheme / policy / legal / statutory / notice inquiries must NOT be treated as conversational
+    const hasSpecificPolicyTerms = /\b(scheme|yojana|subsidy|loan|pm-?kisan|pmsvanidhi|svanidhi|ayushman|ration|notice|circular|challan|order|eligib|guideline|portal|pension|tax|court|appeal|statute|rule|document|clause|affidavit|aadhaar|pan card|voter id|ऋण|लोन|योजना|सब्सिडी|पात्रता|नोटिस)\b/iu.test(clean);
+    if (hasSpecificPolicyTerms) {
+        return false;
+    }
+
+    // 2. Direct greetings with elongated characters (heyy, heyyy, hii, hiii, helloo, yooo, etc.)
+    if (/^(h+[e|a]+y+|h+i+|h+e+l+o+|y+o+|s+u+p+|w+a+s+u+p+|w+a+z+u+p+|h+o+l+a+)\b/i.test(clean)) {
+        return true;
+    }
+
+    // Direct greeting word list
     const greetingWords = new Set([
         "hi", "hello", "hey", "namaste", "namaskar", "pranam", "pranaam",
         "salaam", "salam", "ram ram", "kem cho", "vanakkam", "vandanalu",
         "nomoshkar", "sasrikal", "good morning", "good afternoon", "good evening",
-        "help", "help me", "start", "bye", "goodbye", "thanks", "thank you",
-        "shukriya", "dhanyawad",
+        "good day", "good night", "help", "help me", "start", "bye", "goodbye",
+        "thanks", "thank you", "shukriya", "dhanyawad", "ok", "okay", "cool",
     ]);
 
-    if (greetingWords.has(clean)) return true;
-
-    // Common Indic scripts for greetings
-    if (/^(नमस्ते|नमस्कार|प्रणाम|जय श्री राम|राम राम|केम छो|வணக்கம்|నమస్కారం|নমস্কার)$/u.test(clean)) {
+    const collapsed = clean.replace(/(.)\1+/g, "$1");
+    if (greetingWords.has(clean) || greetingWords.has(collapsed)) {
         return true;
     }
 
-    // Check if query is a conversational greeting/pleasantry pattern
+    // Common Indic scripts for greetings
+    if (/^(नमस्ते|नमस्कार|प्रणाम|जय श्री राम|राम राम|केम छो|வணக்கம்|నమస్కారం|নমস্কার)/u.test(clean)) {
+        return true;
+    }
+
+    // Conversational patterns & pleasantries
     const conversationalPatterns = [
         /^how are you\b/i,
         /^how do you do\b/i,
+        /^how r u\b/i,
+        /^hru\b/i,
+        /^what'?s up\b/i,
+        /^whats up\b/i,
+        /^wassup\b/i,
+        /^wazzup\b/i,
         /^who are you\b/i,
         /^what are you\b/i,
         /^what is your name\b/i,
@@ -125,23 +145,27 @@ export const isConversationalOrGeneralQuery = (query = "") => {
         /^what do you do\b/i,
         /^tell me about yourself\b/i,
         /^kya haal hai\b/i,
+        /^kya hal hai\b/i,
+        /^kya haal\b/i,
+        /^kya hal\b/i,
         /^aap kaise ho\b/i,
         /^tum kaise ho\b/i,
         /^sab theek\b/i,
+        /^sab badhiya\b/i,
         /^aap kaun ho\b/i,
         /^tum kaun ho\b/i,
         /^kya kar sakte ho\b/i,
         /^madad chahiye\b/i,
         /^mujhe madad chahiye\b/i,
+        /^hi there\b/i,
+        /^hello there\b/i,
+        /^hey there\b/i,
+        /^can you help\b/i,
+        /^tell me\b/i,
     ];
 
     for (const pattern of conversationalPatterns) {
         if (pattern.test(clean)) return true;
-    }
-
-    // Specific scheme / policy / legal / notice inquiries must NOT be treated as conversational
-    if (/\b(scheme|yojana|subsidy|loan|pm-kisan|pmsvanidhi|svanidhi|ayushman|ration|card|notice|circular|challan|order|eligib|guideline|portal|pension|tax|court|appeal|statute|rule|document|file)\b/i.test(clean)) {
-        return false;
     }
 
     return false;
