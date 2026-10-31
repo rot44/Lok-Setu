@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Compass,
   FileSearch,
@@ -11,21 +11,32 @@ import {
   FileCheck2,
 } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useAuth } from "@/context/AuthContext";
+import { buildEligibilityCheckPrompt } from "@/utils/aiPrompt";
 import { Card, CardTitle, CardDescription } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 
 export const Home: React.FC = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const { profile } = useAuth();
+  const navigate = useNavigate();
+
+  const handleEligibilityNavigation = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const prompt = buildEligibilityCheckPrompt(profile, language);
+    navigate(`/assistant?preprompt=${encodeURIComponent(prompt)}&autoSend=1&mode=eligibility`);
+  };
 
   const cards = [
     {
       title: t("home.card1.title"),
       desc: t("home.card1.desc"),
-      to: "/eligibility",
+      to: "/assistant?mode=eligibility",
+      onClick: handleEligibilityNavigation,
       icon: CheckCircle2,
       accent: "neel" as const,
-      badge: "Eligibility Engine",
-      actionText: "Check Now",
+      badge: "AI Eligibility Engine",
+      actionText: "Check with AI",
     },
     {
       title: t("home.card2.title"),
@@ -136,7 +147,7 @@ export const Home: React.FC = () => {
                   <span className="text-xs font-bold text-neel uppercase tracking-wider">
                     Official Guidance
                   </span>
-                  <Link to={c.to}>
+                  <Link to={c.to} onClick={c.onClick}>
                     <Button
                       variant="ghost"
                       size="sm"

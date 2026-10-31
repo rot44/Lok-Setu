@@ -135,9 +135,12 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setIsPlaying(false);
       setIsLoading(false);
       // Auto-play might be blocked by user-gesture requirements
+      const rawMsg = err instanceof Error ? err.message : "";
       const message =
         err instanceof Error && err.name === "NotAllowedError"
           ? "Click Play on the player to start listening."
+          : rawMsg.includes("no supported sources") || (err instanceof Error && err.name === "NotSupportedError")
+          ? "Audio explainer is synthesizing or streaming. Please click Play again in a moment."
           : "Could not play audio track. Please try again.";
       setError(message);
     }
@@ -162,7 +165,13 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .catch((err: unknown) => {
           setIsPlaying(false);
           setIsLoading(false);
-          const msg = err instanceof Error ? err.message : "Playback failed.";
+          const rawMsg = err instanceof Error ? err.message : "";
+          const msg =
+            err instanceof Error && err.name === "NotAllowedError"
+              ? "Click Play on the player to start listening."
+              : rawMsg.includes("no supported sources") || (err instanceof Error && err.name === "NotSupportedError")
+              ? "Audio explainer is synthesizing or streaming. Please click Play again in a moment."
+              : "Playback failed. Please try again.";
           setError(msg);
         });
     }

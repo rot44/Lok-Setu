@@ -143,7 +143,7 @@ export const generateStructuredJson = async ({
 }) => {
     const client = clientOverride || getGeminiClient();
 
-    const executeCall = async () => {
+    const executeCall = async (targetModel = model) => {
         const combinedSystemInstruction = systemInstruction
             ? `${CIVIC_GROUNDING_INSTRUCTION}\n\n${systemInstruction}\nYou MUST output valid JSON matching the specified structure.`
             : `${CIVIC_GROUNDING_INSTRUCTION}\nYou MUST output valid JSON matching the specified structure.`;
@@ -159,7 +159,7 @@ export const generateStructuredJson = async ({
         }
 
         const response = await client.models.generateContent({
-            model,
+            model: targetModel,
             contents: prompt,
             config: requestConfig,
         });
@@ -176,22 +176,27 @@ export const generateStructuredJson = async ({
         }
     };
 
-    // Retry once if transient network timeout or DEADLINE_EXCEEDED occurs
+    // Retry once if transient network timeout, rate limit or DEADLINE_EXCEEDED occurs with fallback model
+    const candidateModels = [model, "gemini-flash-lite-latest"];
     let lastError = null;
-    for (let attempt = 1; attempt <= 2; attempt++) {
+
+    for (let attempt = 0; attempt < candidateModels.length; attempt++) {
+        const activeModel = candidateModels[attempt];
         try {
-            return await executeCall();
+            return await executeCall(activeModel);
         } catch (error) {
             lastError = error;
-            const isTransientTimeout =
+            const isTransientError =
                 error?.message?.includes("DEADLINE_EXCEEDED") ||
                 error?.message?.includes("timeout") ||
-                error?.message?.includes("fetch failed");
+                error?.message?.includes("fetch failed") ||
+                error?.message?.includes("429") ||
+                error?.message?.includes("RESOURCE_EXHAUSTED");
 
-            if (isTransientTimeout && attempt < 2) {
-                console.warn(`⚠️ [Gemini] Structured JSON request timed out on attempt ${attempt}. Retrying with fresh call...`);
+            if (isTransientError && attempt < candidateModels.length - 1) {
+                console.warn(`⚠️ [Gemini] Model ${activeModel} encountered transient error (${error?.message?.slice(0, 80)}). Retrying with fallback ${candidateModels[attempt + 1]}...`);
                 geminiClientInstance = null; // Reset singleton to clear hanging socket
-                await new Promise((r) => setTimeout(r, 1500));
+                await new Promise((r) => setTimeout(r, 1000));
                 continue;
             }
             break;

@@ -181,36 +181,54 @@ export const CivicAssistant: React.FC = () => {
     [inputText, loading, language, sessionId, lastAttemptedQuery]
   );
 
-  // Auto-prompt handler when arriving with a specific scheme or query from Explore/Scheme Details
+  // Auto-prompt handler when arriving with a specific scheme, preprompt or query
   useEffect(() => {
     const schemeTitle = searchParams.get("schemeTitle");
     const incomingQuery = searchParams.get("query");
+    const incomingPreprompt = searchParams.get("preprompt");
+    const mode = searchParams.get("mode");
     const autoSend =
       searchParams.get("autoSend") === "1" || searchParams.get("autoSend") === "true";
 
-    if ((schemeTitle || incomingQuery) && !autoPromptTriggered.current) {
+    if ((schemeTitle || incomingQuery || incomingPreprompt || mode === "eligibility") && !autoPromptTriggered.current) {
       autoPromptTriggered.current = true;
       const targetTitle = schemeTitle ? decodeURIComponent(schemeTitle) : "";
-      const generatedPrompt = incomingQuery
-        ? decodeURIComponent(incomingQuery)
-        : buildSchemeExplanationPrompt(targetTitle, language);
+      
+      let generatedPrompt = "";
+      if (incomingPreprompt) {
+        generatedPrompt = decodeURIComponent(incomingPreprompt);
+      } else if (incomingQuery) {
+        generatedPrompt = decodeURIComponent(incomingQuery);
+      } else if (targetTitle) {
+        generatedPrompt = buildSchemeExplanationPrompt(targetTitle, language);
+      }
 
       if (targetTitle) {
         setActiveSchemeBadge(targetTitle);
+      } else if (mode === "eligibility") {
+        setActiveSchemeBadge(
+          language === "hi"
+            ? "पात्रता मूल्यांकन (Eligibility Evaluation)"
+            : "Scheme Eligibility Evaluation"
+        );
       }
 
       // Clean URL params quietly so back/reload does not resend
       const cleanParams = new URLSearchParams(searchParams);
       cleanParams.delete("schemeTitle");
       cleanParams.delete("query");
+      cleanParams.delete("preprompt");
+      cleanParams.delete("mode");
       cleanParams.delete("autoSend");
       cleanParams.delete("schemeId");
       setSearchParams(cleanParams, { replace: true });
 
-      if (autoSend) {
-        handleSend(generatedPrompt);
-      } else {
-        setInputText(generatedPrompt);
+      if (generatedPrompt) {
+        if (autoSend) {
+          handleSend(generatedPrompt);
+        } else {
+          setInputText(generatedPrompt);
+        }
       }
     }
   }, [searchParams, language, setSearchParams, handleSend]);

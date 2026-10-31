@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { translations, SUPPORTED_LANGUAGES } from "../src/translations/index.ts";
-import { buildSchemeExplanationPrompt } from "../src/utils/aiPrompt.ts";
+import { buildSchemeExplanationPrompt, buildEligibilityCheckPrompt } from "../src/utils/aiPrompt.ts";
 
 test("Lok-Setu Civic Assistant Contracts & State Machine", async (t) => {
   const EXACT_MISSING_INFO = "This document does not clearly specify this information.";
@@ -171,5 +171,41 @@ test("Lok-Setu Civic Assistant Contracts & State Machine", async (t) => {
 
     const guPrompt = buildSchemeExplanationPrompt(title, "gu");
     assert.ok(guPrompt.includes("યોજના"));
+  });
+
+  await t.test("buildEligibilityCheckPrompt generates profile-aware prompts with demographic details", () => {
+    const mockProfile = {
+      state: "Gujarat",
+      city: "Ahmedabad",
+      age: 32,
+      gender: "female",
+      occupation: "street_vendor",
+      incomeRange: "below_1_lakh",
+      caste: "obc",
+      rationCardType: "bpl",
+      isSpeciallyAbled: false,
+    };
+
+    const hiPrompt = buildEligibilityCheckPrompt(mockProfile, "hi");
+    assert.ok(hiPrompt.includes("Gujarat"));
+    assert.ok(hiPrompt.includes("32 वर्ष"));
+    assert.ok(hiPrompt.includes("FEMALE"));
+    assert.ok(hiPrompt.includes("STREET VENDOR"));
+    assert.ok(hiPrompt.includes("OBC"));
+    assert.ok(hiPrompt.includes("BPL"));
+    assert.ok(hiPrompt.includes("पात्र सरकारी योजनाओं"));
+
+    const enPrompt = buildEligibilityCheckPrompt(mockProfile, "en");
+    assert.ok(enPrompt.includes("Gujarat, Ahmedabad"));
+    assert.ok(enPrompt.includes("32 years"));
+    assert.ok(enPrompt.includes("FEMALE"));
+    assert.ok(enPrompt.includes("STREET VENDOR"));
+    assert.ok(enPrompt.includes("OBC"));
+    assert.ok(enPrompt.includes("BPL"));
+    assert.ok(enPrompt.includes("Direct Financial & Livelihood Entitlements"));
+
+    // Guest fallback
+    const guestPrompt = buildEligibilityCheckPrompt(null, "en");
+    assert.ok(guestPrompt.includes("check my eligibility"));
   });
 });

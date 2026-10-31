@@ -8,7 +8,6 @@ import {
   MessageSquare,
   Bell,
   Scale,
-  CheckCircle2,
   User,
   LayoutDashboard,
   LogOut,
@@ -39,7 +38,6 @@ export const Header: React.FC = () => {
 
   const navLinks = [
     { to: "/", label: t("nav.home"), icon: Scale },
-    { to: "/eligibility", label: t("nav.eligibility", "Eligibility"), icon: CheckCircle2 },
     { to: "/schemes", label: t("nav.explore"), icon: Compass },
     { to: "/analyze", label: t("nav.analyze"), icon: FileSearch },
     { to: "/assistant", label: t("nav.assistant"), icon: MessageSquare },

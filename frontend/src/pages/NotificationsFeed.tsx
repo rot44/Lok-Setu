@@ -1,12 +1,27 @@
 import React, { useEffect, useState } from "react";
-import { Bell, RefreshCw, Calendar, Building, ExternalLink } from "lucide-react";
+import { Link } from "react-router-dom";
+import {
+  Bell,
+  RefreshCw,
+  Calendar,
+  Building,
+  ExternalLink,
+  ArrowRight,
+  Sparkles,
+  Volume2,
+  VolumeX,
+  Loader2,
+} from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useAudio } from "@/context/AudioContext";
+import { schemeService } from "@/services/scheme.service";
 import { api } from "@/services/api";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Alert } from "@/components/ui/Alert";
 import { Card, CardTitle, CardDescription, CardFooter } from "@/components/ui/Card";
+import { cn } from "@/utils/cn";
 
 interface NotificationItem {
   _id: string;
@@ -26,10 +41,41 @@ interface NotificationsResponse {
 }
 
 export const NotificationsFeed: React.FC = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const { currentTrack, isPlaying, playTrack, togglePlayPause } = useAudio();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadingAudioId, setLoadingAudioId] = useState<string | null>(null);
+
+  const handlePlayNotificationAudio = async (item: NotificationItem, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (currentTrack?.id === item._id) {
+      togglePlayPause();
+      return;
+    }
+
+    try {
+      setLoadingAudioId(item._id);
+      const audioRes = await schemeService.getOrSynthesizeAudio(item._id, language);
+      playTrack({
+        id: item._id,
+        title: item.title,
+        audioUrl: audioRes.audioUrl,
+        language: audioRes.languageCode || language,
+        authority: item.issuingAuthority,
+        durationSeconds: audioRes.durationSeconds,
+        source: "scheme",
+        plainSummary: audioRes.plainSummary,
+      });
+    } catch {
+      // Safe fallback
+    } finally {
+      setLoadingAudioId(null);
+    }
+  };
 
   const fetchNotifications = async () => {
     setLoading(true);
@@ -143,20 +189,71 @@ export const NotificationsFeed: React.FC = () => {
                 </CardDescription>
               </div>
 
-              <CardFooter className="pt-4">
-                <span className="text-xs capitalize font-medium text-neel-muted">
-                  Type: {item.documentType.replace("_", " ")}
-                </span>
-                {item.officialPortalUrl && (
-                  <a
-                    href={item.officialPortalUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-vermilion hover:underline"
+              <CardFooter className="pt-4 border-t border-paper-border flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  {/* Listen in Indian language */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => handlePlayNotificationAudio(item, e)}
+                    disabled={loadingAudioId === item._id}
+                    className={cn(
+                      "p-1.5 h-8 w-8 rounded-full",
+                      currentTrack?.id === item._id && isPlaying
+                        ? "text-vermilion bg-paper-dark"
+                        : "text-neel-muted hover:text-neel"
+                    )}
+                    title={currentTrack?.id === item._id && isPlaying ? "Pause audio" : "Listen in Indian language"}
+                    aria-label="Listen to scheme explanation"
                   >
-                    Official Portal <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
+                    {loadingAudioId === item._id ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-vermilion" />
+                    ) : currentTrack?.id === item._id && isPlaying ? (
+                      <VolumeX className="h-4 w-4" />
+                    ) : (
+                      <Volume2 className="h-4 w-4" />
+                    )}
+                  </Button>
+
+                  {/* Ask AI */}
+                  <Link to={`/assistant?schemeTitle=${encodeURIComponent(item.title)}&autoSend=1`}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-neel hover:text-neel-dark hover:bg-paper-dark px-2"
+                      leftIcon={<Sparkles className="h-3.5 w-3.5 text-mustard-dark" />}
+                      title="Ask Civic AI about this scheme"
+                    >
+                      Ask AI
+                    </Button>
+                  </Link>
+
+                  {/* Official Portal */}
+                  {item.officialPortalUrl && (
+                    <a
+                      href={item.officialPortalUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 rounded-full text-neel-muted hover:text-neel hover:bg-paper transition-colors"
+                      title="Visit official government portal"
+                      aria-label="Visit official government portal"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  )}
+                </div>
+
+                {/* Details -> button */}
+                <Link to={`/schemes/${item._id}`}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs font-semibold"
+                    rightIcon={<ArrowRight className="h-3.5 w-3.5" />}
+                  >
+                    Details
+                  </Button>
+                </Link>
               </CardFooter>
             </Card>
           ))}
