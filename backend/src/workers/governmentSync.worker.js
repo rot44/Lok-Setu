@@ -1,14 +1,10 @@
 import "dotenv/config";
 import mongoose from "mongoose";
+import { fileURLToPath } from "url";
 import connectDB from "../db/index.js";
 import { governmentSyncService } from "../services/governmentSync.service.js";
 
 const DEFAULT_SYNC_INTERVAL_HOURS = 6;
-const intervalMs =
-    (parseInt(process.env.GOV_SYNC_INTERVAL_HOURS, 10) || DEFAULT_SYNC_INTERVAL_HOURS) *
-    60 *
-    60 *
-    1000;
 
 let intervalId = null;
 let isShuttingDown = false;
@@ -17,10 +13,10 @@ let isJobRunning = false;
 /**
  * Runs one complete synchronization cycle.
  */
-const runSyncCycle = async () => {
+export const runGovSyncCycle = async () => {
     if (isJobRunning) {
         console.log("⏳ [GovSync Worker] Previous sync cycle still running, skipping this trigger.");
-        return;
+        return null;
     }
 
     isJobRunning = true;
@@ -44,25 +40,63 @@ const runSyncCycle = async () => {
         if (result.livePib.errors?.length > 0) {
             console.warn(`   - Warnings/Errors:`, result.livePib.errors);
         }
+        return result;
     } catch (err) {
         console.error(`❌ [GovSync Worker] Error during sync cycle:`, err.message);
+        return null;
     } finally {
         isJobRunning = false;
-        console.log(`⏰ [GovSync Worker] Next cycle scheduled in ${intervalMs / (1000 * 60 * 60)} hours.\n`);
+        console.log(`⏰ [GovSync Worker] Next cycle scheduled.`);
     }
 };
 
 /**
- * Graceful termination handler.
+ * Starts the ongoing autonomous government synchronization scheduler.
+ */
+export const startGovSyncScheduler = async ({
+    intervalHours = parseInt(process.env.GOV_SYNC_INTERVAL_HOURS, 10) || DEFAULT_SYNC_INTERVAL_HOURS,
+    runImmediate = false,
+} = {}) => {
+    if (intervalId) {
+        console.log("ℹ️ [GovSync Worker] Scheduler already active.");
+        return;
+    }
+
+    const intervalMs = Math.max(1, intervalHours) * 60 * 60 * 1000;
+    console.log(`🔄 Autonomous 24/7 Government Scheme Poller Active (Interval: ${intervalHours}h).`);
+
+    if (runImmediate) {
+        // Run first cycle asynchronously without blocking
+        runGovSyncCycle().catch((err) => console.error("⚠️ Immediate GovSync cycle error:", err.message));
+    }
+
+    intervalId = setInterval(runGovSyncCycle, intervalMs);
+    // Unref so worker doesn't prevent clean test exits if started in test mode
+    if (intervalId && typeof intervalId.unref === "function") {
+        intervalId.unref();
+    }
+};
+
+/**
+ * Stops the autonomous government synchronization scheduler.
+ */
+export const stopGovSyncScheduler = async () => {
+    if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+        console.log("🛑 [GovSync Worker] Scheduler stopped cleanly.");
+    }
+};
+
+/**
+ * Graceful termination handler for standalone worker execution.
  */
 const shutdown = async (signal) => {
     if (isShuttingDown) return;
     isShuttingDown = true;
     console.log(`\n🛑 [GovSync Worker] Received ${signal}. Terminating worker gracefully...`);
 
-    if (intervalId) {
-        clearInterval(intervalId);
-    }
+    await stopGovSyncScheduler();
 
     try {
         if (mongoose.connection.readyState === 1) {
@@ -77,23 +111,25 @@ const shutdown = async (signal) => {
     }
 };
 
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+// Check if run directly from node CLI
+const isDirectExecution =
+    process.argv[1] &&
+    (fileURLToPath(import.meta.url) === process.argv[1] ||
+        process.argv[1].endsWith("governmentSync.worker.js"));
 
-// Connect DB and Start Worker
-connectDB()
-    .then(async () => {
-        console.log(`🚀 [GovSync Worker] Connected to MongoDB Atlas.`);
-        console.log(`🔄 Autonomous 24/7 Government Scheme Poller Active.`);
+if (isDirectExecution) {
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-        // Run immediately on launch
-        await runSyncCycle();
+    connectDB()
+        .then(async () => {
+            console.log(`🚀 [GovSync Worker] Connected to MongoDB Atlas.`);
+            await startGovSyncScheduler({ runImmediate: true });
+        })
+        .catch((err) => {
+            console.error("❌ [GovSync Worker] MongoDB connection failed:", err.message);
+            process.exit(1);
+        });
+}
 
-        // Schedule ongoing interval
-        intervalId = setInterval(runSyncCycle, intervalMs);
-    })
-    .catch((err) => {
-        console.error("❌ [GovSync Worker] MongoDB connection failed:", err.message);
-        process.exit(1);
-    });
 

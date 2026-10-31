@@ -972,3 +972,4 @@ if (process.argv[1]?.endsWith("seedPanIndiaAllStatesCatalog.js")) {
             process.exit(1);
         });
 }
+

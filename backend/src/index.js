@@ -6,6 +6,7 @@ import app from "./app.js";
 import { config, validateEnv, logStartupDiagnostics } from "./config/env.js";
 import { closeEmailQueue } from "./queues/email.queue.js";
 import { closeEmailWorker } from "./workers/email.worker.js";
+import { startGovSyncScheduler, stopGovSyncScheduler } from "./workers/governmentSync.worker.js";
 import { closeRateLimitRedis } from "./middlewares/rateLimiter.middleware.js";
 
 // Validate environment variables on startup
@@ -36,6 +37,7 @@ const gracefulShutdown = async (signal) => {
         }
 
         // Close background workers and queues
+        await stopGovSyncScheduler();
         await closeEmailWorker();
         await closeEmailQueue();
         await closeRateLimitRedis();
@@ -72,6 +74,9 @@ connectDB()
         const port = config.server.port;
         server = app.listen(port, () => {
             console.log(`🚀 Lok Setu server running at port ${port}`);
+            if (process.env.DISABLE_GOV_SYNC !== "true" && process.env.NODE_ENV !== "test") {
+                startGovSyncScheduler({ runImmediate: false });
+            }
         });
     })
     .catch((err) => {
