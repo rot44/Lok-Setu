@@ -691,4 +691,33 @@ test("Lok-Setu Conversational Civic Assistant Suite", async (t) => {
             AiChatSession.create = originalCreate;
         }
     });
+
+    await t.test("handleAssistantChat processes conversational query 'how are you' with steering response and insufficientEvidence: false", async () => {
+        const originalCreate = AiChatSession.create;
+        AiChatSession.create = async (payload) => ({
+            ...payload,
+            _id: new mongoose.Types.ObjectId(),
+        });
+
+        try {
+            const req = {
+                user: null,
+                body: {
+                    query: "how are you",
+                    language: "en",
+                },
+                headers: {},
+            };
+            const res = createMockRes();
+            await handleAssistantChat(req, res, next);
+
+            assert.equal(res.statusCode, 200);
+            assert.equal(res.body.success, true);
+            assert.equal(res.body.data.message.analysis.insufficientEvidence, false);
+            assert.ok(res.body.data.message.text.includes("Lok-Setu"));
+            assert.deepEqual(res.body.data.message.analysis.citations, []);
+        } finally {
+            AiChatSession.create = originalCreate;
+        }
+    });
 });

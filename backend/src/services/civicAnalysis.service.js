@@ -532,7 +532,12 @@ export const analyzeCivicQuery = async (query, options = {}) => {
 
     // 3. Retrieve evidence (or use pre-supplied evidence)
     let evidenceList = [];
-    if (Array.isArray(options.evidence)) {
+    const isConversational = isConversationalOrGeneralQuery(validQuery);
+
+    if (isConversational) {
+        // Conversational pleasantries and greetings skip catalog vector search
+        evidenceList = [];
+    } else if (Array.isArray(options.evidence)) {
         evidenceList = options.evidence;
     } else {
         const retrievalFn = typeof options.retrievalService === "function"
