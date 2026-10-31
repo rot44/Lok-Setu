@@ -193,25 +193,14 @@ export const ExploreSchemes: React.FC = () => {
   return (
     <div className="space-y-8">
       {/* Page Header */}
-      <div className="border-b border-paper-border pb-5 space-y-2">
-        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-vermilion">
-          <Compass className="h-4 w-4" />
-          <span>Welfare Scheme Directory</span>
-        </div>
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div>
-            <h1 className="font-serif text-2xl sm:text-4xl font-bold text-neel">
-              {t("nav.explore", "Explore Schemes")}
-            </h1>
-            <p className="text-sm text-neel-muted max-w-2xl leading-relaxed mt-1">
-              Search and browse verified central, state, and municipal policies, subsidies, and citizen welfare programs.
-            </p>
-          </div>
-          {filtersMeta && (
-            <div className="text-xs font-mono px-3 py-1.5 rounded bg-paper-dark border border-paper-border text-neel self-start sm:self-auto">
-              Active Catalog: <strong className="text-vermilion">{filtersMeta.totalActive}</strong> policies
-            </div>
-          )}
+      <div className="border-b border-paper-border pb-5">
+        <div>
+          <h1 className="font-serif text-2xl sm:text-4xl font-bold text-neel">
+            {t("nav.explore", "Explore Schemes")}
+          </h1>
+          <p className="text-sm text-neel-muted max-w-2xl leading-relaxed mt-1">
+            Search and browse verified central, state, and municipal policies, subsidies, and citizen welfare programs.
+          </p>
         </div>
       </div>
 

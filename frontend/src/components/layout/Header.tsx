@@ -116,9 +116,6 @@ export const Header: React.FC = () => {
                   )}
                 >
                   <span>{link.label}</span>
-                  {link.to === "/notifications" && (
-                    <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-vermilion" />
-                  )}
                 </NavLink>
               );
             })}
@@ -281,9 +278,6 @@ export const Header: React.FC = () => {
                   )}
                 >
                   <span>{link.label}</span>
-                  {link.to === "/notifications" && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-vermilion" />
-                  )}
                 </NavLink>
               );
             })}

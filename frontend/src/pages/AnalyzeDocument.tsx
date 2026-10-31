@@ -171,15 +171,11 @@ export const AnalyzeDocument: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       {/* Header */}
-      <div className="border-b border-paper-border pb-5 space-y-2 text-center sm:text-left">
-        <div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-vermilion">
-          <FileText className="h-4 w-4" />
-          <span>Notice & Document Analyzer</span>
-        </div>
+      <div className="border-b border-paper-border pb-5 text-center sm:text-left">
         <h1 className="font-serif text-2xl sm:text-4xl font-bold text-neel">
           {t("nav.analyze")}
         </h1>
-        <p className="text-sm text-neel-muted max-w-2xl leading-relaxed">
+        <p className="text-sm text-neel-muted max-w-2xl leading-relaxed mt-1">
           Upload any official government order, municipal circular, tax notice, or challan to get a plain-language explanation of your rights, appeal windows, and action steps.
         </p>
       </div>

@@ -101,14 +101,10 @@ export const NotificationsFeed: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-paper-border pb-5">
         <div>
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-vermilion mb-1">
-            <Bell className="h-4 w-4" />
-            <span>Card 4 • 7-Day Live Feed</span>
-          </div>
           <h1 className="font-serif text-2xl sm:text-4xl font-bold text-neel">
             {t("nav.notifications")}
           </h1>
-          <p className="text-sm text-neel-muted max-w-xl">
+          <p className="text-sm text-neel-muted max-w-xl mt-1">
             Recent gazette notices, circulars, and welfare policies issued by central and state authorities in the last 7 days.
           </p>
         </div>
@@ -200,14 +196,14 @@ export const NotificationsFeed: React.FC = () => {
                     className={cn(
                       "p-1.5 h-8 w-8 rounded-full",
                       currentTrack?.id === item._id && isPlaying
-                        ? "text-vermilion bg-paper-dark"
-                        : "text-neel-muted hover:text-neel"
+                        ? "text-stone-900 bg-stone-100"
+                        : "text-stone-500 hover:text-stone-900"
                     )}
                     title={currentTrack?.id === item._id && isPlaying ? "Pause audio" : "Listen in Indian language"}
                     aria-label="Listen to scheme explanation"
                   >
                     {loadingAudioId === item._id ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-vermilion" />
+                      <Loader2 className="h-4 w-4 animate-spin text-stone-600" />
                     ) : currentTrack?.id === item._id && isPlaying ? (
                       <VolumeX className="h-4 w-4" />
                     ) : (
