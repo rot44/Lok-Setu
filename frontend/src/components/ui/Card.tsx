@@ -7,23 +7,13 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export const Card: React.FC<CardProps> = ({
   className,
-  accent = "none",
   children,
   ...props
 }) => {
-  const accentStyles = {
-    none: "",
-    neel: "border-t-4 border-t-neel",
-    vermilion: "border-t-4 border-t-vermilion",
-    mustard: "border-t-4 border-t-mustard",
-    sage: "border-t-4 border-t-sage-dark",
-  };
-
   return (
     <div
       className={cn(
-        "bg-white border border-paper-border rounded-md shadow-editorial p-5 sm:p-6 transition-all",
-        accentStyles[accent],
+        "bg-white border border-stone-200/90 rounded-xl shadow-xs p-5 sm:p-6 transition-all",
         className
       )}
       {...props}
