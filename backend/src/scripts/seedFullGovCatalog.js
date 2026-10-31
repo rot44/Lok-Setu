@@ -685,3 +685,4 @@ if (process.argv[1]?.endsWith("seedFullGovCatalog.js")) {
             process.exit(1);
         });
 }
+
