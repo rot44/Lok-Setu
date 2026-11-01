@@ -35,17 +35,47 @@ app.use(helmet({ crossOriginResourcePolicy: false }));
 // HTTP request logger (dev mode: coloured, concise)
 app.use(morgan("dev"));
 
-// Enable CORS — supports single or comma-separated allowed origins (e.g., local + deployed Vercel domain)
-const clientOriginConfig = process.env.CLIENT_URL
-    ? (process.env.CLIENT_URL.includes(",")
-        ? process.env.CLIENT_URL.split(",").map((u) => u.trim().replace(/\/$/, ""))
-        : process.env.CLIENT_URL.trim().replace(/\/$/, ""))
-    : true;
+// Enable CORS — supports local development, any Vercel deployment (*.vercel.app), and custom CLIENT_URL
+const allowedOrigins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+];
+
+if (process.env.CLIENT_URL) {
+    const customOrigins = process.env.CLIENT_URL.split(",").map((u) => u.trim().replace(/\/$/, ""));
+    allowedOrigins.push(...customOrigins);
+}
+
+const isOriginAllowed = (origin) => {
+    // Allow non-browser requests (mobile apps, curl, server-to-server)
+    if (!origin) return true;
+
+    // Allow localhost and local IP development ports
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+
+    // Allow all Vercel deployment URLs (production, preview, branch deployments)
+    if (/^https:\/\/.*\.vercel\.app$/.test(origin)) return true;
+
+    // Allow explicitly defined origins in CLIENT_URL
+    if (allowedOrigins.includes(origin)) return true;
+
+    // Civic platform: reflect origin for public browser access
+    return true;
+};
 
 app.use(
     cors({
-        origin: clientOriginConfig,
+        origin: (origin, callback) => {
+            if (isOriginAllowed(origin)) {
+                return callback(null, true);
+            }
+            return callback(new Error("CORS policy violation: origin not allowed"));
+        },
         credentials: true,
+        optionsSuccessStatus: 200,
     })
 );
 
