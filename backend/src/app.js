@@ -20,9 +20,9 @@ import assistantRouter from "./routes/assistant.routes.js";
 
 const app = express();
 
-// Trust reverse proxies (Render, Railway, Vercel, Nginx, AWS, Cloudflare)
-// Required for accurate HTTPS detection, secure cookies, and proxy IP resolution
-app.set("trust proxy", 1);
+// Trust reverse proxies (Render, Cloudflare, Vercel, Nginx, AWS)
+// Set to true so Express correctly reads X-Forwarded-For for real client IP and HTTPS cookies
+app.set("trust proxy", true);
 
 // Compress all HTTP responses (gzip/Brotli) — must be first
 app.use(compression());

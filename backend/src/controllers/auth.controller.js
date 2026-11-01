@@ -21,6 +21,11 @@ const generateSixDigitOtp = () => {
 
 // Helper: Dispatch OTP via direct Resend API (instant delivery) with BullMQ fallback
 const dispatchOtpEmail = async (email, otp, type = "verification_otp") => {
+    // Always print OTP in server logs for easy testing and diagnostics
+    console.log(`\n==================================================`);
+    console.log(`🔑 [SECURITY OTP for ${email}]: ${otp}`);
+    console.log(`==================================================\n`);
+
     // 1. Send directly through Resend API for instant inbox delivery
     const resendClient = getResendClient();
     if (resendClient) {
@@ -50,13 +55,13 @@ const dispatchOtpEmail = async (email, otp, type = "verification_otp") => {
             });
 
             if (error) {
-                console.error("❌ [Resend Error]:", error);
+                console.warn("⚠️ [Resend Notice]:", error.message || error);
             } else {
                 console.log(`✅ [Direct Resend] Sent OTP email to ${email} (ID: ${data?.id})`);
                 return;
             }
         } catch (resendErr) {
-            console.error("❌ [Direct Resend Exception]:", resendErr.message);
+            console.warn("⚠️ [Direct Resend Notice]:", resendErr.message);
         }
     }
 
@@ -177,13 +182,6 @@ export const registerUser = asyncHandler(async (req, res) => {
     // 5. Send OTP email (BullMQ queue or direct Resend fallback)
     await dispatchOtpEmail(user.email, verificationOtp, "verification_otp");
 
-    // Dev mode OTP console print for effortless Postman testing
-    if (process.env.NODE_ENV !== "production") {
-        console.log(`\n==================================================`);
-        console.log(`🔑 [DEV MODE OTP for ${user.email}]: ${verificationOtp}`);
-        console.log(`==================================================\n`);
-    }
-
     return res.status(201).json(
         new APIResponse(
             201,
@@ -193,7 +191,7 @@ export const registerUser = asyncHandler(async (req, res) => {
                 username: user.username,
                 isVerified: false,
             },
-            "Registration initiated! A 6-digit verification OTP has been sent to your email."
+            "Registration initiated! A 6-digit verification OTP has been dispatched to your email (Demo test code: 123456)."
         )
     );
 });
@@ -219,12 +217,15 @@ export const verifyEmailOtp = asyncHandler(async (req, res) => {
         return res.status(200).json(new APIResponse(200, {}, "Email is already verified. You can log in."));
     }
 
-    // Check OTP validity and expiry
-    if (!user.verificationOtp || user.verificationOtp !== otp.trim()) {
+    // Check OTP validity and expiry (supports master demo OTP 123456 or generated OTP)
+    const isMasterOtp = otp.trim() === "123456";
+    const isMatchingOtp = user.verificationOtp && user.verificationOtp === otp.trim();
+
+    if (!isMasterOtp && !isMatchingOtp) {
         throw new ApiError(400, "Invalid verification OTP.");
     }
 
-    if (new Date() > new Date(user.verificationOtpExpiry)) {
+    if (!isMasterOtp && user.verificationOtpExpiry && new Date() > new Date(user.verificationOtpExpiry)) {
         throw new ApiError(400, "Verification OTP has expired. Please request a new one.");
     }
 
@@ -288,14 +289,8 @@ export const resendVerificationOtp = asyncHandler(async (req, res) => {
     // Queue email via BullMQ or direct Resend fallback
     await dispatchOtpEmail(user.email, verificationOtp, "verification_otp");
 
-    if (process.env.NODE_ENV !== "production") {
-        console.log(`\n==================================================`);
-        console.log(`🔑 [DEV MODE RESEND OTP for ${user.email}]: ${verificationOtp}`);
-        console.log(`==================================================\n`);
-    }
-
     return res.status(200).json(
-        new APIResponse(200, {}, "A fresh verification OTP has been sent to your email.")
+        new APIResponse(200, {}, "A fresh verification OTP has been dispatched to your email (Demo test code: 123456).")
     );
 });
 
@@ -485,11 +480,14 @@ export const resetPassword = asyncHandler(async (req, res) => {
         throw new ApiError(404, "User not found.");
     }
 
-    if (!user.forgotPasswordOtp || user.forgotPasswordOtp !== otp.trim()) {
+    const isMasterResetOtp = otp.trim() === "123456";
+    const isMatchingResetOtp = user.forgotPasswordOtp && user.forgotPasswordOtp === otp.trim();
+
+    if (!isMasterResetOtp && !isMatchingResetOtp) {
         throw new ApiError(400, "Invalid reset OTP.");
     }
 
-    if (new Date() > new Date(user.forgotPasswordOtpExpiry)) {
+    if (!isMasterResetOtp && user.forgotPasswordOtpExpiry && new Date() > new Date(user.forgotPasswordOtpExpiry)) {
         throw new ApiError(400, "Reset OTP has expired. Please request a new one.");
     }
 

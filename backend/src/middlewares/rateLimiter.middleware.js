@@ -55,17 +55,28 @@ const safeSendCommand = async (...args) => {
 };
 
 /**
+ * Extracts the real client IP behind reverse proxies (Render, Cloudflare).
+ * Prevents clustering all users into Render's internal 10.x.x.x container IP.
+ */
+const getClientIp = (req) => {
+    const forwarded = req.headers["x-forwarded-for"];
+    if (forwarded) {
+        return forwarded.split(",")[0].trim();
+    }
+    return req.ip || req.socket?.remoteAddress || "127.0.0.1";
+};
+
+/**
  * General API Rate Limiter
- * Applied globally across all API routes.
- * Max 100 requests per 15 minutes per IP.
- * Uses high-performance in-memory store in dev/test, and RedisStore in production.
+ * Relaxed to 1000 requests per 15 minutes per client IP.
  */
 export const apiRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 1000,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: () => process.env.NODE_ENV !== "production",
+    keyGenerator: getClientIp,
+    skip: () => process.env.DISABLE_RATE_LIMITER === "true",
     ...(process.env.NODE_ENV === "production" && {
         store: new RedisStore({ sendCommand: safeSendCommand }),
     }),
@@ -80,15 +91,15 @@ export const apiRateLimiter = rateLimit({
 
 /**
  * Strict Auth Rate Limiter
- * Applied on authentication routes (register, login, OTP resend, forgot password).
- * Max 10 attempts per 10 minutes in production; relaxed in dev/test to avoid blocking test runners.
+ * Relaxed to 500 attempts per 10 minutes per client IP to prevent lockouts during demos/testing.
  */
 export const authRateLimiter = rateLimit({
     windowMs: 10 * 60 * 1000,
-    max: process.env.NODE_ENV === "production" ? 10 : 100,
+    max: 500,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: () => process.env.NODE_ENV !== "production",
+    keyGenerator: getClientIp,
+    skip: () => process.env.DISABLE_RATE_LIMITER === "true",
     ...(process.env.NODE_ENV === "production" && {
         store: new RedisStore({ sendCommand: safeSendCommand }),
     }),
