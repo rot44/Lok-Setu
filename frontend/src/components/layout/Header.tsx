@@ -3,7 +3,6 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   Menu,
   X,
-  Scale,
   User,
   LayoutDashboard,
   LogOut,
@@ -79,9 +78,7 @@ export const Header: React.FC = () => {
             className="flex items-center gap-2.5 shrink-0 focus:outline-none select-none py-1 group"
             aria-label="Lok-Setu Home"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-stone-900 text-white shadow-xs group-hover:bg-stone-800 transition-colors">
-              <Scale className="h-4 w-4 text-mustard" />
-            </div>
+            <img src="/logo.jpg" alt="Lok-Setu" className="h-8 w-auto rounded-md object-contain shadow-xs border border-stone-800/30 group-hover:scale-105 transition-transform" />
             <div className="flex items-baseline gap-1.5 whitespace-nowrap">
               <span className="font-serif text-lg font-bold tracking-tight text-stone-900">
                 लोक सेतु

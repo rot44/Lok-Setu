@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="frontend/public/logo.jpg" alt="Lok-Setu Logo" width="320" style="border-radius: 16px;" />
+</p>
+
 # Lok-Setu (लोक-सेतु) / NagrikMitra AI
 
 > **Citizen-First Civic Intelligence & Multilingual Welfare Policy Platform for India**
@@ -251,3 +255,4 @@ npm --prefix frontend run build
 
 This project is licensed under the [ISC License](LICENSE).
 Built with ❤️ for accessible civic intelligence across India.
+

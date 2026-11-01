@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Scale, ShieldCheck, HeartHandshake } from "lucide-react";
+import { ShieldCheck, HeartHandshake } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { LanguageCode } from "@/translations";
 
@@ -27,9 +27,7 @@ export const Footer: React.FC = () => {
           {/* Brand Info */}
           <div className="md:col-span-2 space-y-3">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded bg-neel text-white shadow-editorial">
-                <Scale className="h-4 w-4 text-mustard" />
-              </div>
+              <img src="/logo.jpg" alt="Lok-Setu" className="h-8 w-auto rounded-md object-contain shadow-xs border border-stone-700/40" />
               <span className="font-serif text-lg font-bold text-neel">
                 लोक सेतु | Lok-Setu
               </span>

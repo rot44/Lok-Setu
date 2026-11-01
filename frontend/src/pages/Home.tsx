@@ -82,6 +82,9 @@ export const Home: React.FC = () => {
     <div className="space-y-12 sm:space-y-16 py-4">
       {/* Hero Section */}
       <section className="text-center max-w-3xl mx-auto pt-4 sm:pt-10 space-y-5">
+        <div className="flex justify-center mb-1">
+          <img src="/logo.jpg" alt="Lok-Setu Logo" className="h-20 sm:h-24 w-auto rounded-2xl shadow-md border border-stone-800/30 object-contain hover:scale-105 transition-transform" />
+        </div>
         <h1 className="font-serif text-3xl sm:text-5xl lg:text-6xl font-bold text-stone-900 tracking-tight leading-[1.15]">
           {t("home.heroTitle")}
         </h1>
