@@ -168,6 +168,41 @@ export const CivicAssistant: React.FC = () => {
         return;
       }
 
+      const speakBrowserSpeech = (textToSpeak: string, langToUse: string) => {
+        if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+        try {
+          window.speechSynthesis.cancel();
+          const cleanText = textToSpeak
+            .replace(/\[CITE-[^\]]+\]/g, "")
+            .replace(/\[.*?\]\(.*?\)/g, "")
+            .replace(/\*\*(.*?)\*\*/g, "$1")
+            .replace(/\*(.*?)\*/g, "$1")
+            .replace(/#{1,6}\s+/g, "")
+            .replace(/^[-*•]\s+/gm, "")
+            .replace(/https?:\/\/\S+/g, "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 500);
+
+          const utterance = new SpeechSynthesisUtterance(cleanText);
+          const targetLang = BCP47_SPEECH_MAP[langToUse || language] || "hi-IN";
+          utterance.lang = targetLang;
+          utterance.rate = 0.95;
+
+          const voices = window.speechSynthesis.getVoices();
+          const matchedVoice = voices.find(
+            (v) => v.lang === targetLang || v.lang.startsWith(targetLang.slice(0, 2))
+          );
+          if (matchedVoice) {
+            utterance.voice = matchedVoice;
+          }
+
+          window.speechSynthesis.speak(utterance);
+        } catch (speechErr) {
+          console.warn("Browser speech fallback notice:", speechErr);
+        }
+      };
+
       try {
         setLoadingAudioId(msg.id);
         const audioRes = await assistantService.synthesizeAssistantAudio(
@@ -176,34 +211,25 @@ export const CivicAssistant: React.FC = () => {
           activeSchemeBadge || "AI Scheme Explainer"
         );
 
-        playTrack({
-          id: msg.id,
-          title: activeSchemeBadge
-            ? `${activeSchemeBadge} (AI Explainer)`
-            : "AI Scheme Explanation",
-          audioUrl: audioRes.audioUrl,
-          language: audioRes.language || language,
-          authority: "Lok-Setu Civic AI (Sarvam)",
-          durationSeconds: audioRes.durationSeconds,
-          source: "assistant",
-          plainSummary: msg.text,
-        });
-      } catch (err: unknown) {
-        console.warn("Sarvam audio synthesis fallback:", err);
-        if (typeof window !== "undefined" && "speechSynthesis" in window) {
-          try {
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(msg.text.slice(0, 350));
-            utterance.lang = BCP47_SPEECH_MAP[msg.languageUsed || language] || "hi-IN";
-            window.speechSynthesis.speak(utterance);
-          } catch {
-            const errMessage = err instanceof Error ? err.message : "Failed to synthesize voice.";
-            setError(errMessage);
-          }
+        if (audioRes.audioUrl) {
+          playTrack({
+            id: msg.id,
+            title: activeSchemeBadge
+              ? `${activeSchemeBadge} (AI Explainer)`
+              : "AI Scheme Explanation",
+            audioUrl: audioRes.audioUrl,
+            language: audioRes.language || language,
+            authority: "Lok-Setu Civic AI (Sarvam)",
+            durationSeconds: audioRes.durationSeconds,
+            source: "assistant",
+            plainSummary: msg.text,
+          });
         } else {
-          const errMessage = err instanceof Error ? err.message : "Failed to synthesize voice.";
-          setError(errMessage);
+          speakBrowserSpeech(msg.text, msg.languageUsed || language);
         }
+      } catch (err: unknown) {
+        console.warn("Audio synthesis notice, activating browser speech fallback:", err);
+        speakBrowserSpeech(msg.text, msg.languageUsed || language);
       } finally {
         setLoadingAudioId(null);
       }

@@ -8,6 +8,7 @@ import {
     validateLanguage,
 } from "../services/civicAnalysis.service.js";
 import { sarvamService, toTwoLetterLang } from "../services/sarvam.service.js";
+import { getGeminiClient } from "../services/gemini.service.js";
 import { uploadFileToS3, downloadFileBufferFromS3, isStorageConfigured } from "../utils/s3Uploader.js";
 import { CHAT_SESSION_MODES } from "../constants.js";
 import { ApiError } from "../utils/apiError.js";
@@ -387,8 +388,27 @@ export const generateAssistantSpeech = asyncHandler(async (req, res) => {
         );
     }
 
-    // 2. Synthesize using Sarvam Bulbul TTS
-    const ttsResult = await sarvamService.synthesizeSpeech(cleanSpeechText, languageCode);
+    // 2. Synthesize using Sarvam Bulbul TTS (with graceful fallback to browser speech if Sarvam unconfigured)
+    let ttsResult = null;
+    try {
+        ttsResult = await sarvamService.synthesizeSpeech(cleanSpeechText, languageCode);
+    } catch (sarvamErr) {
+        console.warn("⚠️ Sarvam TTS synthesis notice, signaling client browser speech synthesis:", sarvamErr.message);
+        return res.status(200).json(
+            new APIResponse(
+                200,
+                {
+                    audioUrl: null,
+                    useBrowserSpeech: true,
+                    text: cleanSpeechText,
+                    language: languageCode,
+                    durationSeconds: Math.ceil(cleanSpeechText.length / 15),
+                    voiceName: "Browser Native Voice",
+                },
+                "Browser speech fallback enabled."
+            )
+        );
+    }
 
     // 3. Cache in memory (evict oldest if cache exceeds 100 entries)
     if (assistantAudioCache.size >= 100) {
@@ -496,22 +516,63 @@ export const transcribeAssistantAudio = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Audio file is required for voice transcription.");
     }
 
-    const result = await sarvamService.transcribeSpeech(
-        file.buffer,
-        language,
-        file.originalname || "voice.webm",
-        file.mimetype || "audio/webm"
-    );
+    // 1. Try Sarvam AI Saaras v4 if configured
+    try {
+        const result = await sarvamService.transcribeSpeech(
+            file.buffer,
+            language,
+            file.originalname || "voice.webm",
+            file.mimetype || "audio/webm"
+        );
 
-    return res.status(200).json(
-        new APIResponse(
-            200,
-            {
-                transcript: result.transcript,
-                languageCode: result.languageCode,
-                requestId: result.requestId,
-            },
-            "Voice transcribed successfully via Sarvam AI."
-        )
-    );
+        return res.status(200).json(
+            new APIResponse(
+                200,
+                {
+                    transcript: result.transcript,
+                    languageCode: result.languageCode,
+                    requestId: result.requestId,
+                },
+                "Voice transcribed successfully via Sarvam AI."
+            )
+        );
+    } catch (sarvamErr) {
+        console.warn("⚠️ Sarvam transcribe notice, falling back to Gemini Multimodal Audio:", sarvamErr.message);
+
+        // 2. Intelligent Fallback: Gemini Multimodal Audio Transcription
+        try {
+            const client = getGeminiClient();
+            const mimeType = file.mimetype || "audio/webm";
+            const prompt = `You are an accurate voice transcription engine for Indian civic queries. Listen to this spoken audio recording (language context: ${language}) and transcribe exactly what the user said. Return ONLY the transcribed text, without any quotes or introductory or concluding remarks.`;
+
+            const response = await client.models.generateContent({
+                model: "gemini-2.5-flash",
+                contents: [
+                    {
+                        inlineData: {
+                            mimeType,
+                            data: file.buffer.toString("base64"),
+                        },
+                    },
+                    prompt,
+                ],
+            });
+
+            const transcript = response?.text?.trim() || "";
+            return res.status(200).json(
+                new APIResponse(
+                    200,
+                    {
+                        transcript,
+                        languageCode: language,
+                        requestId: `gemini-audio-${Date.now()}`,
+                    },
+                    "Voice transcribed successfully via Gemini Multimodal Audio."
+                )
+            );
+        } catch (geminiErr) {
+            console.error("❌ Gemini audio transcription fallback error:", geminiErr.message);
+            throw new ApiError(500, "Failed to transcribe audio. Please try typing your question.");
+        }
+    }
 });
