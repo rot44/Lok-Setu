@@ -70,6 +70,9 @@ app.use("/api/v1/documents", documentRouter);
 app.use("/api/v1/assistant", assistantRouter);
 
 // Health check (used by Render / Railway / cloud deployment platforms)
+app.get("/", (req, res) => {
+    res.status(200).json({ success: true, message: "Lok Setu API is running 🏛️" });
+});
 app.get("/health", (req, res) => {
     res.status(200).json({ success: true, message: "Lok Setu API is running 🏛️" });
 });

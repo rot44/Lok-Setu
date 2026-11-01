@@ -5,10 +5,10 @@ import { config } from "../config/env.js";
 
 const redisOptions = {
     enableReadyCheck: true,
-    lazyConnect: true,
+    lazyConnect: false,
     retryStrategy(times) {
-        if (times > 2) return null;
-        return 2000;
+        if (times > 3) return null;
+        return Math.min(times * 500, 2000);
     },
 };
 
@@ -47,17 +47,11 @@ redisRateLimitClient.on("error", (err) => {
 });
 
 /**
- * Resilient Redis command executor that handles temporary disconnects cleanly.
+ * Redis command executor for rate-limit-redis.
+ * Leverages ioredis command pipeline and offline queuing.
  */
 const safeSendCommand = async (...args) => {
-    try {
-        if (redisRateLimitClient.status !== "ready") {
-            return null;
-        }
-        return await redisRateLimitClient.call(...args);
-    } catch (_err) {
-        return null;
-    }
+    return await redisRateLimitClient.call(...args);
 };
 
 /**
