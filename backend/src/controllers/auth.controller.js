@@ -125,16 +125,17 @@ export const registerUser = asyncHandler(async (req, res) => {
         throw new ApiError(400, "Password must be at least 8 characters long.");
     }
 
-    // 2. Check if user already exists
-    const existingUser = await User.findOne({
-        $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }],
-    });
+    // 2. Separate checks for email and username for clean error messaging
+    const existingEmailUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingEmailUser && existingEmailUser.isVerified) {
+        throw new ApiError(409, "An account with this email address already exists. Please sign in instead.");
+    }
 
-    if (existingUser) {
-        if (existingUser.isVerified) {
-            throw new ApiError(409, "User with this email or username already exists.");
+    const existingUsernameUser = await User.findOne({ username: username.toLowerCase() });
+    if (existingUsernameUser) {
+        if (existingUsernameUser.isVerified || (existingEmailUser && existingUsernameUser._id.toString() !== existingEmailUser._id.toString())) {
+            throw new ApiError(409, "This username is already taken. Please choose another username.");
         }
-        // If user registered earlier but didn't verify OTP, we can re-issue OTP
     }
 
     // 3. Generate 6-digit OTP and 10-minute expiry
@@ -142,15 +143,14 @@ export const registerUser = asyncHandler(async (req, res) => {
     const verificationOtpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
 
     let user;
-    if (existingUser && !existingUser.isVerified) {
+    if (existingEmailUser && !existingEmailUser.isVerified) {
         // Update existing unverified user with fresh credentials and OTP
-        existingUser.email = email.toLowerCase();
-        existingUser.username = username.toLowerCase();
-        existingUser.password = password; // Will be hashed by pre-save hook
-        existingUser.verificationOtp = verificationOtp;
-        existingUser.verificationOtpExpiry = verificationOtpExpiry;
-        if (phone) existingUser.phone = phone;
-        user = await existingUser.save();
+        existingEmailUser.username = username.toLowerCase();
+        existingEmailUser.password = password; // Will be hashed by pre-save hook
+        existingEmailUser.verificationOtp = verificationOtp;
+        existingEmailUser.verificationOtpExpiry = verificationOtpExpiry;
+        if (phone) existingEmailUser.phone = phone;
+        user = await existingEmailUser.save();
     } else {
         // Create new user
         user = await User.create({

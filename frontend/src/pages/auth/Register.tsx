@@ -65,7 +65,17 @@ export const Register: React.FC = () => {
       navigate(`/verify-otp?email=${encodeURIComponent(formData.email.trim().toLowerCase())}`);
     } catch (err: unknown) {
       if (err instanceof ClientApiError) {
-        setError(err.message);
+        let msg = err.message;
+        if (msg.includes("E11000") || msg.toLowerCase().includes("duplicate key")) {
+          if (msg.toLowerCase().includes("email")) {
+            msg = "An account with this email address already exists. Please sign in instead.";
+          } else if (msg.toLowerCase().includes("username")) {
+            msg = "This username is already taken. Please choose another username.";
+          } else {
+            msg = "An account with these details already exists. Please sign in instead.";
+          }
+        }
+        setError(msg);
       } else {
         setError("Failed to complete registration. Please try again.");
       }
