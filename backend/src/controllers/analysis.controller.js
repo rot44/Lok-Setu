@@ -564,26 +564,48 @@ export const getOrGenerateNoticeAudio = asyncHandler(async (req, res) => {
         }
     }
 
-    const ttsResult = await sarvamService.synthesizeSpeech(summaryText, languageCode);
-
+    let ttsResult = null;
     let audioUrl = "";
     let s3Key = "";
 
-    if (isStorageConfigured()) {
-        const uploaded = await uploadUserNoticeAudioToS3(ttsResult.audioBuffer, req.user._id, doc._id, languageCode);
-        s3Key = uploaded.s3Key;
-        audioUrl = await getPresignedDownloadUrl(uploaded.s3Key, 86400);
-    } else {
-        audioUrl = "data:audio/wav;base64," + ttsResult.audioBuffer.toString("base64");
-        s3Key = "user-uploads/" + req.user._id + "/audio/" + doc._id + "-" + languageCode + ".wav";
-    }
+    try {
+        ttsResult = await sarvamService.synthesizeSpeech(summaryText, languageCode);
 
-    doc.audioUrl = audioUrl;
-    doc.audioS3Key = s3Key;
-    doc.audioDurationSeconds = ttsResult.durationSeconds;
-    doc.audioLanguage = languageCode;
-    doc.voiceName = ttsResult.speaker;
-    await doc.save();
+        if (isStorageConfigured()) {
+            const uploaded = await uploadUserNoticeAudioToS3(ttsResult.audioBuffer, req.user._id, doc._id, languageCode);
+            s3Key = uploaded.s3Key;
+            audioUrl = await getPresignedDownloadUrl(uploaded.s3Key, 86400);
+        } else {
+            audioUrl = "data:audio/wav;base64," + ttsResult.audioBuffer.toString("base64");
+            s3Key = "user-uploads/" + req.user._id + "/audio/" + doc._id + "-" + languageCode + ".wav";
+        }
+
+        doc.audioUrl = audioUrl;
+        doc.audioS3Key = s3Key;
+        doc.audioDurationSeconds = ttsResult.durationSeconds;
+        doc.audioLanguage = languageCode;
+        doc.voiceName = ttsResult.speaker;
+        await doc.save();
+    } catch (sarvamErr) {
+        console.warn("⚠️ Sarvam TTS notice for notice explanation, enabling browser speech:", sarvamErr.message);
+        return res.status(200).json(
+            new APIResponse(
+                200,
+                {
+                    documentId: doc._id,
+                    fileName: doc.fileName,
+                    language: languageCode,
+                    audioUrl: null,
+                    useBrowserSpeech: true,
+                    durationSeconds: Math.ceil(summaryText.length / 15),
+                    voiceName: "Browser Native Voice",
+                    summary: summaryText,
+                    isCached: false,
+                },
+                "Browser speech fallback enabled."
+            )
+        );
+    }
 
     return res.status(200).json(
         new APIResponse(

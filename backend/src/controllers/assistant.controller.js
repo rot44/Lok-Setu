@@ -368,7 +368,9 @@ export const generateAssistantSpeech = asyncHandler(async (req, res) => {
         .update(`${languageCode}::${cleanSpeechText}`)
         .digest("hex");
 
-    const streamUrl = `/api/v1/assistant/audio/stream?hash=${contentHash}&lang=${languageCode}`;
+    const host = req.get("host") || "lok-setu-3yep.onrender.com";
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+    const streamUrl = `${protocol}://${host}/api/v1/assistant/audio/stream?hash=${contentHash}&lang=${languageCode}`;
 
     // 1. Check in-memory cache
     if (assistantAudioCache.has(contentHash)) {

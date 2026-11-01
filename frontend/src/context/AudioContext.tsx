@@ -122,9 +122,16 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const audio = audioRef.current;
     if (!audio) return;
 
+    // Resolve relative backend audio streams (e.g. /api/v1/assistant/audio/stream) against backend API host
+    let targetAudioUrl = track.audioUrl || "";
+    if (targetAudioUrl.startsWith("/")) {
+      const apiBase = (import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(/\/api\/v1\/?$/, "");
+      targetAudioUrl = `${apiBase}${targetAudioUrl}`;
+    }
+
     try {
-      if (audio.src !== track.audioUrl) {
-        audio.src = track.audioUrl;
+      if (audio.src !== targetAudioUrl) {
+        audio.src = targetAudioUrl;
         audio.load();
       }
       audio.playbackRate = playbackRate;
@@ -132,6 +139,28 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setIsPlaying(true);
       setIsLoading(false);
     } catch (err: unknown) {
+      // Seamless browser speech fallback if server stream encounters format/codec mismatch
+      if (typeof window !== "undefined" && "speechSynthesis" in window && track.plainSummary) {
+        try {
+          window.speechSynthesis.cancel();
+          const cleanText = track.plainSummary
+            .replace(/\[CITE-[^\]]+\]/g, "")
+            .replace(/\[.*?\]\(.*?\)/g, "")
+            .replace(/\*\*(.*?)\*\*/g, "$1")
+            .replace(/#{1,6}\s+/g, "")
+            .trim()
+            .slice(0, 500);
+          const utterance = new SpeechSynthesisUtterance(cleanText);
+          utterance.lang = "hi-IN";
+          window.speechSynthesis.speak(utterance);
+          setIsPlaying(true);
+          setIsLoading(false);
+          return;
+        } catch {
+          // safe ignore
+        }
+      }
+
       setIsPlaying(false);
       setIsLoading(false);
       // Auto-play might be blocked by user-gesture requirements

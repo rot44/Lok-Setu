@@ -102,18 +102,33 @@ Citizen Question: ${askQuery}`.trim();
       setIsSynthesizingAudio(true);
       setAudioError(null);
       const audioRes = await analysisService.getOrSynthesizeNoticeAudio(documentId, language);
-      playTrack({
-        id: documentId,
-        title: selectedFile?.name || "Official Notice",
-        audioUrl: audioRes.audioUrl,
-        language: audioRes.language,
-        durationSeconds: audioRes.durationSeconds,
-        source: "notice",
-        plainSummary: audioRes.summary,
-      });
+      if (audioRes.audioUrl) {
+        playTrack({
+          id: documentId,
+          title: selectedFile?.name || "Official Notice",
+          audioUrl: audioRes.audioUrl,
+          language: audioRes.language,
+          durationSeconds: audioRes.durationSeconds,
+          source: "notice",
+          plainSummary: audioRes.summary || analysis?.summary || "",
+        });
+      } else if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+        const textToSpeak = (audioRes.summary || analysis?.summary || "").slice(0, 500);
+        const utterance = new SpeechSynthesisUtterance(textToSpeak);
+        utterance.lang = "hi-IN";
+        window.speechSynthesis.speak(utterance);
+      }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to synthesize notice audio.";
-      setAudioError(msg);
+      if (typeof window !== "undefined" && "speechSynthesis" in window && analysis?.summary) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(analysis.summary.slice(0, 500));
+        utterance.lang = "hi-IN";
+        window.speechSynthesis.speak(utterance);
+      } else {
+        const msg = err instanceof Error ? err.message : "Failed to synthesize notice audio.";
+        setAudioError(msg);
+      }
     } finally {
       setIsSynthesizingAudio(false);
     }
