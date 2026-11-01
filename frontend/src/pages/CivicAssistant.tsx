@@ -157,7 +157,7 @@ export const CivicAssistant: React.FC = () => {
   const [lastAttemptedQuery, setLastAttemptedQuery] = useState<string>("");
   const { currentTrack, isPlaying, playTrack, togglePlayPause } = useAudio();
   const [loadingAudioId, setLoadingAudioId] = useState<string | null>(null);
-  const voiceAutoPlay = true;
+  const voiceAutoPlay = false; // Voice is strictly opt-in: only plays when citizen clicks speaker button
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const autoPromptTriggered = useRef(false);
 
@@ -212,7 +212,7 @@ export const CivicAssistant: React.FC = () => {
   );
 
   const handleSend = useCallback(
-    async (queryText?: string, options?: { autoSpeak?: boolean }) => {
+    async (queryText?: string) => {
       const textToSend = (queryText || inputText || lastAttemptedQuery).trim();
       if (!textToSend || loading) return;
 
@@ -246,8 +246,8 @@ export const CivicAssistant: React.FC = () => {
 
         setMessages((prev) => [...prev, response.message]);
 
-        // Auto-play voice response if voice mode was triggered or auto-reply enabled
-        if (options?.autoSpeak || voiceAutoPlay) {
+        // Voice only plays on user explicit interaction (speaker button click)
+        if (voiceAutoPlay) {
           handlePlayAssistantVoice(response.message);
         }
       } catch (err: unknown) {
@@ -279,7 +279,7 @@ export const CivicAssistant: React.FC = () => {
     },
     onEnd: (finalTranscript) => {
       if (finalTranscript && finalTranscript.trim()) {
-        handleSend(finalTranscript, { autoSpeak: true });
+        handleSend(finalTranscript);
       }
     },
     onError: (speechErr) => {
