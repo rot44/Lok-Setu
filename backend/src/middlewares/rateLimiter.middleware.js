@@ -76,6 +76,7 @@ export const apiRateLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: getClientIp,
+    validate: { keyGeneratorIpFallback: false },
     skip: () => process.env.DISABLE_RATE_LIMITER === "true",
     ...(process.env.NODE_ENV === "production" && {
         store: new RedisStore({ sendCommand: safeSendCommand }),
@@ -99,6 +100,7 @@ export const authRateLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: getClientIp,
+    validate: { keyGeneratorIpFallback: false },
     skip: () => process.env.DISABLE_RATE_LIMITER === "true",
     ...(process.env.NODE_ENV === "production" && {
         store: new RedisStore({ sendCommand: safeSendCommand }),
