@@ -199,8 +199,10 @@ export class BaseGovernmentConnector {
                     redirect: "manual", // Handle redirects explicitly to revalidate target
                     signal: controller.signal,
                     headers: {
-                        "User-Agent": "Mozilla/5.0 (compatible; LokSetuCivicIngestion/1.0; +https://loksetu.gov.in)",
+                        "User-Agent":
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 (LokSetuCivicIngestion/1.0)",
                         Accept: "application/xml, text/xml, application/json, text/html, application/pdf;q=0.9, */*;q=0.8",
+                        ...(overrideOptions.headers || {}),
                     },
                 });
             } catch (err) {

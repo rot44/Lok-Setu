@@ -228,6 +228,29 @@ describe("Modular Government Source Connectors Suite", () => {
                 /exceeds limit/
             );
         });
+
+        it("sends standard browser-compatible User-Agent and merges custom request headers", async () => {
+            let capturedHeaders = null;
+            const innerFetch = createMockFetch({ status: 200, body: "ok", headers: { "content-type": "text/html" } });
+            const mockFetcher = async (url, opts) => {
+                capturedHeaders = opts.headers;
+                return innerFetch(url, opts);
+            };
+
+            const connector = new PortalScraperConnector({
+                fetcher: mockFetcher,
+                dnsResolver: createMockDns(),
+            });
+
+            await connector.safeFetch("https://mahaonline.gov.in/test", {
+                headers: { "X-Custom-Auth": "SecretKey123" },
+            });
+
+            assert.ok(capturedHeaders);
+            assert.ok(capturedHeaders["User-Agent"].includes("Mozilla/5.0"));
+            assert.ok(capturedHeaders["User-Agent"].includes("Chrome"));
+            assert.equal(capturedHeaders["X-Custom-Auth"], "SecretKey123");
+        });
     });
 
     describe("4. PIB RSS Connector", () => {
