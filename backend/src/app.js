@@ -20,6 +20,10 @@ import assistantRouter from "./routes/assistant.routes.js";
 
 const app = express();
 
+// Trust reverse proxies (Render, Railway, Vercel, Nginx, AWS, Cloudflare)
+// Required for accurate HTTPS detection, secure cookies, and proxy IP resolution
+app.set("trust proxy", 1);
+
 // Compress all HTTP responses (gzip/Brotli) — must be first
 app.use(compression());
 
@@ -31,10 +35,16 @@ app.use(helmet({ crossOriginResourcePolicy: false }));
 // HTTP request logger (dev mode: coloured, concise)
 app.use(morgan("dev"));
 
-// Enable CORS — allows the React frontend to call this API with cookies
+// Enable CORS — supports single or comma-separated allowed origins (e.g., local + deployed Vercel domain)
+const clientOriginConfig = process.env.CLIENT_URL
+    ? (process.env.CLIENT_URL.includes(",")
+        ? process.env.CLIENT_URL.split(",").map((u) => u.trim().replace(/\/$/, ""))
+        : process.env.CLIENT_URL.trim().replace(/\/$/, ""))
+    : true;
+
 app.use(
     cors({
-        origin: process.env.CLIENT_URL || true, // Set CLIENT_URL in .env for production
+        origin: clientOriginConfig,
         credentials: true,
     })
 );
@@ -59,8 +69,11 @@ app.use("/api/v1/eligibility", eligibilityRouter);
 app.use("/api/v1/documents", documentRouter);
 app.use("/api/v1/assistant", assistantRouter);
 
-// Health check (used by Render / Railway deployment platforms)
+// Health check (used by Render / Railway / cloud deployment platforms)
 app.get("/health", (req, res) => {
+    res.status(200).json({ success: true, message: "Lok Setu API is running 🏛️" });
+});
+app.get("/api/v1/health", (req, res) => {
     res.status(200).json({ success: true, message: "Lok Setu API is running 🏛️" });
 });
 
